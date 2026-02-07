@@ -1,6 +1,8 @@
 use std::env;
 
-pub struct Config {
+pub(crate) const API_PREFIX: &str = "/api/v1";
+
+pub(crate) struct Config {
     pub database_url: String,
     pub host: String,
     pub port: u16,
