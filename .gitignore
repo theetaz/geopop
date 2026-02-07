@@ -29,7 +29,10 @@ pgdata/
 .vscode/
 *.swp
 *.swo
+.cursor/
 .DS_Store
+
 
 # temporary files
 temp/
+
