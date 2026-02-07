@@ -10,7 +10,57 @@ const MAX_BATCH_SIZE: usize = 1000;
 const MAX_RADIUS_KM: f64 = 500.0;
 const KM_PER_DEG: f64 = 111.32;
 
-// ── Request / Response types ──
+const VALID_CONTINENTS: &[&str] = &[
+    "asia", "europe", "africa", "oceania", "americas",
+    "north-america", "south-america",
+];
+
+// ── Standard API Envelope ──
+
+#[derive(Serialize, ToSchema)]
+pub struct ApiResponse<T: Serialize> {
+    pub code: u16,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<T>,
+}
+
+fn ok<T: Serialize>(payload: T) -> HttpResponse {
+    HttpResponse::Ok().json(ApiResponse {
+        code: 200,
+        message: "success".into(),
+        payload: Some(payload),
+    })
+}
+
+fn bad_request(msg: &str) -> HttpResponse {
+    HttpResponse::BadRequest().json(ApiResponse::<()> {
+        code: 400,
+        message: msg.into(),
+        payload: None,
+    })
+}
+
+fn not_found(msg: &str) -> HttpResponse {
+    HttpResponse::NotFound().json(ApiResponse::<()> {
+        code: 404,
+        message: msg.into(),
+        payload: None,
+    })
+}
+
+fn internal_error(msg: &str) -> HttpResponse {
+    HttpResponse::InternalServerError().json(ApiResponse::<()> {
+        code: 500,
+        message: msg.into(),
+        payload: None,
+    })
+}
+
+fn db_error() -> HttpResponse { internal_error("Database connection error") }
+fn query_error() -> HttpResponse { internal_error("Query execution error") }
+
+// ── Request types ──
 
 #[derive(Deserialize, ToSchema)]
 pub struct PointQuery {
@@ -18,42 +68,9 @@ pub struct PointQuery {
     pub lon: f64,
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct PointResponse {
-    pub lat: f64,
-    pub lon: f64,
-    pub population: f32,
-    pub resolution_km: f32,
-}
-
 #[derive(Deserialize, ToSchema)]
 pub struct BatchQuery {
     pub points: Vec<PointQuery>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct BatchResponse {
-    pub results: Vec<PointResponse>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ErrorResponse {
-    pub error: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct HealthResponse {
-    pub status: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ReverseResponse {
-    pub place_id: i32,
-    pub lat: String,
-    pub lon: String,
-    pub name: String,
-    pub display_name: String,
-    pub address: HashMap<String, String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -64,8 +81,41 @@ pub struct ExposureQuery {
     pub radius: f64,
 }
 
-fn default_radius() -> f64 {
-    1.0
+fn default_radius() -> f64 { 1.0 }
+
+#[derive(Deserialize, ToSchema)]
+pub struct ContinentQuery {
+    pub continent: String,
+}
+
+// ── Response payload types ──
+
+#[derive(Serialize, ToSchema)]
+pub struct HealthPayload {
+    pub status: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PointPayload {
+    pub lat: f64,
+    pub lon: f64,
+    pub population: f32,
+    pub resolution_km: f32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct BatchPayload {
+    pub results: Vec<PointPayload>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ReversePayload {
+    pub place_id: i32,
+    pub lat: String,
+    pub lon: String,
+    pub name: String,
+    pub display_name: String,
+    pub address: HashMap<String, String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -80,7 +130,13 @@ pub struct ExposedPlace {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct ExposureResponse {
+pub struct CoordinateInfo {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ExposurePayload {
     pub coordinate: CoordinateInfo,
     pub radius_km: f64,
     pub total_population: f64,
@@ -93,13 +149,7 @@ pub struct ExposureResponse {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct CoordinateInfo {
-    pub lat: f64,
-    pub lon: f64,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct CountryResponse {
+pub struct CountryPayload {
     pub iso_a2: Option<String>,
     pub iso_a3: Option<String>,
     pub name: String,
@@ -110,7 +160,7 @@ pub struct CountryResponse {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct CountryDetailResponse {
+pub struct CountryDetailPayload {
     pub iso_a2: Option<String>,
     pub iso_a3: Option<String>,
     pub name: String,
@@ -122,64 +172,62 @@ pub struct CountryDetailResponse {
     pub bbox: [f64; 4],
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct ContinentQuery {
-    pub continent: String,
-}
-
 #[derive(Serialize, ToSchema)]
-pub struct CountryListResponse {
+pub struct CountryListPayload {
     pub continent: String,
     pub count: usize,
-    pub countries: Vec<CountryResponse>,
+    pub countries: Vec<CountryPayload>,
 }
 
 // ── Validation ──
 
 fn validate_coords(lat: f64, lon: f64) -> Result<(), HttpResponse> {
     if !lat.is_finite() || !lon.is_finite() || lat < -90.0 || lat > 90.0 || lon < -180.0 || lon >= 180.0 {
-        return Err(HttpResponse::BadRequest().json(ErrorResponse {
-            error: "Coordinates out of range. Lat: [-90, 90], Lon: [-180, 180)".into(),
-        }));
+        return Err(bad_request(
+            "Coordinates out of range. lat: [-90, 90], lon: [-180, 180)",
+        ));
     }
     Ok(())
 }
 
-fn db_error() -> HttpResponse {
-    HttpResponse::InternalServerError().json(ErrorResponse {
-        error: "Database connection error".into(),
-    })
-}
-
-fn query_error() -> HttpResponse {
-    HttpResponse::InternalServerError().json(ErrorResponse {
-        error: "Query execution error".into(),
-    })
+fn validate_continent(input: &str) -> Result<String, HttpResponse> {
+    let normalized = input.trim().to_lowercase();
+    if normalized.is_empty() {
+        return Err(bad_request(&format!(
+            "Missing required parameter: continent. Valid values: {}",
+            VALID_CONTINENTS.join(", ")
+        )));
+    }
+    if !VALID_CONTINENTS.contains(&normalized.as_str()) {
+        return Err(bad_request(&format!(
+            "Invalid continent '{}'. Valid values: {}",
+            input,
+            VALID_CONTINENTS.join(", ")
+        )));
+    }
+    Ok(normalized)
 }
 
 // ── Handlers ──
 
 #[utoipa::path(get, path = "/health", tag = "System",
-    responses((status = 200, description = "Service is healthy", body = HealthResponse)))]
+    responses((status = 200, description = "Service is healthy")))]
 pub async fn health() -> HttpResponse {
-    HttpResponse::Ok().json(HealthResponse { status: "ok".into() })
+    ok(HealthPayload { status: "ok".into() })
 }
 
 #[utoipa::path(get, path = "/population", tag = "Population",
     params(("lat" = f64, Query), ("lon" = f64, Query)),
-    responses(
-        (status = 200, body = PointResponse),
-        (status = 400, body = ErrorResponse)))]
+    responses((status = 200, description = "Population at coordinate"), (status = 400, description = "Invalid coordinates")))]
 pub async fn get_population(pool: web::Data<Pool>, query: web::Query<PointQuery>) -> HttpResponse {
     let cell = match grid::cell_id(query.lat, query.lon) {
         Some(id) => id,
-        None => return HttpResponse::BadRequest().json(ErrorResponse {
-            error: "Coordinates out of range. Lat: [-90, 90], Lon: [-180, 180)".into(),
-        }),
+        None => return bad_request("Coordinates out of range. lat: [-90, 90], lon: [-180, 180)"),
     };
 
-    let client = pool.get().await.map_err(|e| { log::error!("DB pool: {e}"); }).ok();
-    let client = match client { Some(c) => c, None => return db_error() };
+    let client = match pool.get().await {
+        Ok(c) => c, Err(e) => { log::error!("DB pool: {e}"); return db_error(); }
+    };
 
     let population = match client.query_opt("SELECT pop FROM population WHERE cell_id = $1", &[&cell]).await {
         Ok(Some(r)) => r.get::<_, f32>(0),
@@ -187,21 +235,18 @@ pub async fn get_population(pool: web::Data<Pool>, query: web::Query<PointQuery>
         Err(e) => { log::error!("Query: {e}"); return query_error(); }
     };
 
-    HttpResponse::Ok().json(PointResponse {
-        lat: query.lat, lon: query.lon, population, resolution_km: 1.0,
-    })
+    ok(PointPayload { lat: query.lat, lon: query.lon, population, resolution_km: 1.0 })
 }
 
 #[utoipa::path(post, path = "/population/batch", tag = "Population",
     request_body = BatchQuery,
-    responses(
-        (status = 200, body = BatchResponse),
-        (status = 400, body = ErrorResponse)))]
+    responses((status = 200, description = "Batch population results"), (status = 400, description = "Invalid request")))]
 pub async fn batch_population(pool: web::Data<Pool>, body: web::Json<BatchQuery>) -> HttpResponse {
+    if body.points.is_empty() {
+        return bad_request("Request must contain at least one point");
+    }
     if body.points.len() > MAX_BATCH_SIZE {
-        return HttpResponse::BadRequest().json(ErrorResponse {
-            error: format!("Maximum {MAX_BATCH_SIZE} points per batch request"),
-        });
+        return bad_request(&format!("Maximum {MAX_BATCH_SIZE} points per batch request"));
     }
 
     let client = match pool.get().await {
@@ -220,20 +265,17 @@ pub async fn batch_population(pool: web::Data<Pool>, body: web::Json<BatchQuery>
                 .unwrap_or(0.0),
             None => 0.0,
         };
-        results.push(PointResponse {
+        results.push(PointPayload {
             lat: point.lat, lon: point.lon, population, resolution_km: 1.0,
         });
     }
 
-    HttpResponse::Ok().json(BatchResponse { results })
+    ok(BatchPayload { results })
 }
 
 #[utoipa::path(get, path = "/reverse", tag = "Geocoding",
     params(("lat" = f64, Query), ("lon" = f64, Query)),
-    responses(
-        (status = 200, body = ReverseResponse),
-        (status = 400, body = ErrorResponse),
-        (status = 404, body = ErrorResponse)))]
+    responses((status = 200, description = "Nearest place"), (status = 400, description = "Invalid coordinates"), (status = 404, description = "No place found")))]
 pub async fn reverse_geocode(pool: web::Data<Pool>, query: web::Query<PointQuery>) -> HttpResponse {
     if let Err(e) = validate_coords(query.lat, query.lon) { return e; }
 
@@ -255,37 +297,31 @@ pub async fn reverse_geocode(pool: web::Data<Pool>, query: web::Query<PointQuery
 
     let row = match client.query_opt(sql, &[&query.lon, &query.lat]).await {
         Ok(Some(r)) => r,
-        Ok(None) => return HttpResponse::NotFound().json(ErrorResponse { error: "No nearby place found".into() }),
+        Ok(None) => return not_found("No nearby place found"),
         Err(e) => { log::error!("Reverse geocode: {e}"); return query_error(); }
     };
 
-    HttpResponse::Ok().json(build_reverse_response(&row))
+    ok(build_reverse_payload(&row))
 }
 
 #[utoipa::path(get, path = "/exposure", tag = "Risk Assessment",
     params(
         ("lat" = f64, Query), ("lon" = f64, Query),
         ("radius" = Option<f64>, Query, description = "Radius in km (default: 1, max: 500)")),
-    responses(
-        (status = 200, body = ExposureResponse),
-        (status = 400, body = ErrorResponse)))]
+    responses((status = 200, description = "Exposure analysis"), (status = 400, description = "Invalid parameters")))]
 pub async fn exposure(pool: web::Data<Pool>, query: web::Query<ExposureQuery>) -> HttpResponse {
     if let Err(e) = validate_coords(query.lat, query.lon) { return e; }
 
     let radius_km = query.radius;
     if !radius_km.is_finite() || radius_km <= 0.0 || radius_km > MAX_RADIUS_KM {
-        return HttpResponse::BadRequest().json(ErrorResponse {
-            error: format!("Radius must be between 0 and {MAX_RADIUS_KM} km"),
-        });
+        return bad_request(&format!("Radius must be between 0 and {MAX_RADIUS_KM} km"));
     }
 
     let client = match pool.get().await {
         Ok(c) => c, Err(e) => { log::error!("DB pool: {e}"); return db_error(); }
     };
 
-    // Disable JIT — compilation overhead far exceeds query time for these lookups
     let _ = client.execute("SET LOCAL jit = off", &[]).await;
-
     let (lat, lon) = (query.lat, query.lon);
 
     let total_pop = match query_exposure(&client, lat, lon, radius_km).await {
@@ -302,7 +338,7 @@ pub async fn exposure(pool: web::Data<Pool>, query: web::Query<ExposureQuery>) -
     let area = std::f64::consts::PI * radius_km * radius_km;
     let density = if area > 0.0 { total_pop / area } else { 0.0 };
 
-    HttpResponse::Ok().json(ExposureResponse {
+    ok(ExposurePayload {
         coordinate: CoordinateInfo { lat, lon },
         radius_km,
         total_population: round1(total_pop),
@@ -317,10 +353,7 @@ pub async fn exposure(pool: web::Data<Pool>, query: web::Query<ExposureQuery>) -
 
 #[utoipa::path(get, path = "/country", tag = "Country",
     params(("lat" = f64, Query), ("lon" = f64, Query)),
-    responses(
-        (status = 200, body = CountryResponse),
-        (status = 400, body = ErrorResponse),
-        (status = 404, body = ErrorResponse)))]
+    responses((status = 200, description = "Country at coordinate"), (status = 400, description = "Invalid coordinates"), (status = 404, description = "No country found")))]
 pub async fn country_lookup(pool: web::Data<Pool>, query: web::Query<PointQuery>) -> HttpResponse {
     if let Err(e) = validate_coords(query.lat, query.lon) { return e; }
 
@@ -344,25 +377,24 @@ pub async fn country_lookup(pool: web::Data<Pool>, query: web::Query<PointQuery>
             "#;
             match client.query_opt(fallback, &[&query.lon, &query.lat]).await {
                 Ok(Some(r)) => r,
-                Ok(None) => return HttpResponse::NotFound().json(ErrorResponse {
-                    error: "No country found at this coordinate".into(),
-                }),
+                Ok(None) => return not_found("No country found at this coordinate"),
                 Err(e) => { log::error!("Country fallback: {e}"); return query_error(); }
             }
         }
         Err(e) => { log::error!("Country lookup: {e}"); return query_error(); }
     };
 
-    HttpResponse::Ok().json(build_country_response(&row))
+    ok(build_country_payload(&row))
 }
 
 #[utoipa::path(get, path = "/country/{iso3}", tag = "Country",
     params(("iso3" = String, Path)),
-    responses(
-        (status = 200, body = CountryDetailResponse),
-        (status = 404, body = ErrorResponse)))]
+    responses((status = 200, description = "Country details"), (status = 400, description = "Invalid ISO code"), (status = 404, description = "Country not found")))]
 pub async fn country_by_iso3(pool: web::Data<Pool>, path: web::Path<String>) -> HttpResponse {
     let iso3 = path.into_inner().to_uppercase();
+    if iso3.len() != 3 || !iso3.chars().all(|c| c.is_ascii_alphabetic()) {
+        return bad_request("ISO-3166 alpha-3 code must be exactly 3 letters (e.g. USA, IND, GBR)");
+    }
 
     let client = match pool.get().await {
         Ok(c) => c, Err(e) => { log::error!("DB pool: {e}"); return db_error(); }
@@ -376,13 +408,11 @@ pub async fn country_by_iso3(pool: web::Data<Pool>, path: web::Path<String>) -> 
 
     let row = match client.query_opt(sql, &[&iso3]).await {
         Ok(Some(r)) => r,
-        Ok(None) => return HttpResponse::NotFound().json(ErrorResponse {
-            error: format!("Country not found: {iso3}"),
-        }),
+        Ok(None) => return not_found(&format!("Country not found: {iso3}")),
         Err(e) => { log::error!("Country ISO3: {e}"); return query_error(); }
     };
 
-    HttpResponse::Ok().json(CountryDetailResponse {
+    ok(CountryDetailPayload {
         iso_a2: row.get::<_, Option<String>>(0).map(|s| s.trim().to_string()),
         iso_a3: row.get::<_, Option<String>>(1).map(|s| s.trim().to_string()),
         name: row.get(2),
@@ -397,34 +427,35 @@ pub async fn country_by_iso3(pool: web::Data<Pool>, path: web::Path<String>) -> 
 
 #[utoipa::path(get, path = "/countries", tag = "Country",
     params(("continent" = String, Query)),
-    responses(
-        (status = 200, body = CountryListResponse),
-        (status = 400, body = ErrorResponse)))]
+    responses((status = 200, description = "Countries in continent"), (status = 400, description = "Invalid continent")))]
 pub async fn countries_by_continent(pool: web::Data<Pool>, query: web::Query<ContinentQuery>) -> HttpResponse {
-    let continent = query.continent.trim().to_lowercase();
-    if continent.is_empty() {
-        return HttpResponse::BadRequest().json(ErrorResponse {
-            error: "Missing required parameter: continent".into(),
-        });
-    }
+    let continent = match validate_continent(&query.continent) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
 
     let client = match pool.get().await {
         Ok(c) => c, Err(e) => { log::error!("DB pool: {e}"); return db_error(); }
     };
 
+    let base = "SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion \
+                FROM countries WHERE sovereign = true AND iso_a2 IS NOT NULL AND iso_a3 IS NOT NULL";
+
     let rows = if continent == "americas" {
         client.query(
-            "SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion \
-             FROM countries WHERE LOWER(region_un) = 'americas' \
-             AND sovereign = true AND iso_a2 IS NOT NULL AND iso_a3 IS NOT NULL ORDER BY name",
-            &[],
+            &format!("{base} AND LOWER(region_un) = 'americas' ORDER BY name"), &[],
+        ).await
+    } else if continent == "north-america" {
+        client.query(
+            &format!("{base} AND LOWER(continent) = 'north america' ORDER BY name"), &[],
+        ).await
+    } else if continent == "south-america" {
+        client.query(
+            &format!("{base} AND LOWER(continent) = 'south america' ORDER BY name"), &[],
         ).await
     } else {
         client.query(
-            "SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion \
-             FROM countries WHERE LOWER(region_un) = LOWER($1) \
-             AND sovereign = true AND iso_a2 IS NOT NULL AND iso_a3 IS NOT NULL ORDER BY name",
-            &[&continent],
+            &format!("{base} AND LOWER(region_un) = LOWER($1) ORDER BY name"), &[&continent],
         ).await
     };
 
@@ -432,8 +463,8 @@ pub async fn countries_by_continent(pool: web::Data<Pool>, query: web::Query<Con
         Ok(r) => r, Err(e) => { log::error!("Countries: {e}"); return query_error(); }
     };
 
-    let countries: Vec<CountryResponse> = rows.iter().map(|r| build_country_response(r)).collect();
-    HttpResponse::Ok().json(CountryListResponse {
+    let countries: Vec<CountryPayload> = rows.iter().map(|r| build_country_payload(r)).collect();
+    ok(CountryListPayload {
         continent: query.continent.clone(),
         count: countries.len(),
         countries,
@@ -475,13 +506,13 @@ fn build_address(row: &tokio_postgres::Row, name: &str, fc: &str, cc: &str) -> (
     (display_name, address)
 }
 
-fn build_reverse_response(row: &tokio_postgres::Row) -> ReverseResponse {
+fn build_reverse_payload(row: &tokio_postgres::Row) -> ReversePayload {
     let name: String = row.get(1);
     let fc = row.get::<_, Option<String>>(4).unwrap_or_default();
     let cc = row.get::<_, Option<String>>(5).unwrap_or_default();
     let (display_name, address) = build_address(row, &name, &fc, &cc);
 
-    ReverseResponse {
+    ReversePayload {
         place_id: row.get(0),
         lat: format!("{}", row.get::<_, f64>(2)),
         lon: format!("{}", row.get::<_, f64>(3)),
@@ -489,8 +520,8 @@ fn build_reverse_response(row: &tokio_postgres::Row) -> ReverseResponse {
     }
 }
 
-fn build_country_response(row: &tokio_postgres::Row) -> CountryResponse {
-    CountryResponse {
+fn build_country_payload(row: &tokio_postgres::Row) -> CountryPayload {
+    CountryPayload {
         iso_a2: row.get::<_, Option<String>>(0).map(|s| s.trim().to_string()),
         iso_a3: row.get::<_, Option<String>>(1).map(|s| s.trim().to_string()),
         name: row.get(2),
@@ -509,9 +540,6 @@ async fn query_cell_population(client: &deadpool_postgres::Object, lat: f64, lon
     }
 }
 
-/// Sum population within a circular radius using the canonical grid.
-/// Uses generate_series to enumerate candidate cells in a bounding box,
-/// then filters by actual distance.
 async fn query_exposure(client: &deadpool_postgres::Object, lat: f64, lon: f64, radius_km: f64) -> Result<f64, tokio_postgres::Error> {
     let sql = r#"
         SELECT COALESCE(SUM(pop), 0)::float8
@@ -536,7 +564,6 @@ async fn query_exposure(client: &deadpool_postgres::Object, lat: f64, lon: f64, 
     Ok(client.query_one(sql, &[&lat, &lon, &radius_km]).await?.get(0))
 }
 
-/// Find all GeoNames populated places within a radius using the geography index.
 async fn query_exposed_places(client: &deadpool_postgres::Object, lat: f64, lon: f64, radius_km: f64) -> Result<Vec<ExposedPlace>, tokio_postgres::Error> {
     let sql = r#"
         SELECT g.geonameid, g.name, g.latitude, g.longitude,
