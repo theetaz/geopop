@@ -1,6 +1,11 @@
 mod config;
+mod errors;
 mod grid;
-mod handlers;
+mod models;
+mod repositories;
+mod response;
+mod routes;
+mod validation;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
@@ -19,23 +24,23 @@ use utoipa_swagger_ui::SwaggerUi;
         version = "1.0.0"
     ),
     paths(
-        handlers::health,
-        handlers::get_population,
-        handlers::batch_population,
-        handlers::reverse_geocode,
-        handlers::exposure,
-        handlers::country_lookup,
-        handlers::country_by_iso3,
-        handlers::countries_by_continent,
+        routes::health::health,
+        routes::population::get_population,
+        routes::population::batch_population,
+        routes::geocoding::reverse_geocode,
+        routes::exposure::exposure,
+        routes::country::country_lookup,
+        routes::country::country_by_iso3,
+        routes::country::countries_by_continent,
     ),
     components(schemas(
-        handlers::PointQuery, handlers::PointPayload,
-        handlers::BatchQuery, handlers::BatchPayload,
-        handlers::HealthPayload, handlers::ReversePayload,
-        handlers::ExposureQuery, handlers::ExposurePayload,
-        handlers::ExposedPlace, handlers::CoordinateInfo,
-        handlers::CountryPayload, handlers::CountryDetailPayload,
-        handlers::ContinentQuery, handlers::CountryListPayload,
+        models::PointQuery, models::PointPayload,
+        models::BatchQuery, models::BatchPayload,
+        models::HealthPayload, models::ReversePayload,
+        models::ExposureQuery, models::ExposurePayload,
+        models::ExposedPlace, models::CoordinateInfo,
+        models::CountryPayload, models::CountryDetailPayload,
+        models::ContinentQuery, models::CountryListPayload,
     )),
     tags(
         (name = "System", description = "Health and status"),
@@ -84,14 +89,14 @@ async fn main() -> std::io::Result<()> {
             .wrap(Cors::permissive())
             .app_data(web::Data::new(pool.clone()))
             .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()))
-            .route("/health", web::get().to(handlers::health))
-            .route("/population", web::get().to(handlers::get_population))
-            .route("/population/batch", web::post().to(handlers::batch_population))
-            .route("/reverse", web::get().to(handlers::reverse_geocode))
-            .route("/exposure", web::get().to(handlers::exposure))
-            .route("/country", web::get().to(handlers::country_lookup))
-            .route("/country/{iso3}", web::get().to(handlers::country_by_iso3))
-            .route("/countries", web::get().to(handlers::countries_by_continent))
+            .route("/health", web::get().to(routes::health::health))
+            .route("/population", web::get().to(routes::population::get_population))
+            .route("/population/batch", web::post().to(routes::population::batch_population))
+            .route("/reverse", web::get().to(routes::geocoding::reverse_geocode))
+            .route("/exposure", web::get().to(routes::exposure::exposure))
+            .route("/country", web::get().to(routes::country::country_lookup))
+            .route("/country/{iso3}", web::get().to(routes::country::country_by_iso3))
+            .route("/countries", web::get().to(routes::country::countries_by_continent))
     })
     .bind(&bind)?
     .run()
