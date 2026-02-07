@@ -13,6 +13,7 @@ Query any coordinate on Earth and get back population estimates, reverse geocodi
 - **Batch queries** — up to 1,000 coordinate lookups in a single request
 - **Reverse geocoding** — nearest populated place from 4.8M+ GeoNames entries
 - **Exposure analysis** — population within a radius with directional info for each place
+- **Disaster impact analysis** — auto-expanding radius search for remote/ocean epicentres
 - **Country lookup** — point-in-polygon and ISO code lookup with Natural Earth boundaries
 - **Swagger UI** — interactive API docs at `/api/v1/docs/`
 
@@ -229,6 +230,56 @@ curl "localhost:8080/api/v1/exposure?lat=20.4657&lon=93.9572&radius=10"
 
 The `direction` field is an 8-point compass value (N, NE, E, SE, S, SW, W, NW) and `bearing_deg` is the precise azimuth (0° = North, 90° = East).
 
+### `GET /api/v1/analyse`
+
+Disaster impact analysis with auto-expanding radius. Takes only a coordinate — no radius needed. The endpoint automatically identifies the country, finds the nearest named place, and expands the search radius in 5 km increments (up to 1000 km) until population is found.
+
+Ideal for disaster events where the epicentre may be in ocean, desert, or uninhabited terrain.
+
+```bash
+curl "localhost:8080/api/v1/analyse?lat=5.0&lon=75.0"
+```
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "coordinate": { "lat": 5.0, "lon": 75.0 },
+    "country": {
+      "iso_a2": "MV", "iso_a3": "MDV", "name": "Maldives",
+      "formal_name": "Republic of Maldives",
+      "continent": "Seven seas (open ocean)",
+      "region": "Asia", "subregion": "Southern Asia"
+    },
+    "nearest_place": {
+      "place_id": 6692738,
+      "name": "Meerufenfushi",
+      "display_name": "Meerufenfushi, Kaafu Atoll, Maldives",
+      "address": { "city": "Meerufenfushi", "state": "Kaafu Atoll", "country": "Maldives", "country_code": "mv" },
+      "distance_km": 154.65,
+      "direction": "SW",
+      "bearing_deg": 246.9
+    },
+    "population": {
+      "search_radius_km": 155.0,
+      "total_population": 1797.2,
+      "area_km2": 75476.76,
+      "density_per_km2": 0.0,
+      "epicentre_population": 0.0
+    }
+  }
+}
+```
+
+| Field | Description |
+| ----- | ----------- |
+| `country` | Country the epicentre is in, or nearest country if in ocean |
+| `nearest_place` | Closest named city/town/village with distance, compass direction, and bearing |
+| `population.search_radius_km` | How far the search expanded to find population (indicates remoteness) |
+| `population.epicentre_population` | Population at the exact epicentre cell (0 if ocean/desert) |
+| `population.total_population` | Total population within the search radius |
+
 ### `GET /api/v1/country`
 
 Country containing a coordinate.
@@ -270,6 +321,8 @@ curl "localhost:8080/api/v1/health"
 | `/reverse`            | ~5ms            | GiST index nearest-neighbor                  |
 | `/exposure` (10km)    | ~20ms           | `generate_series` grid scan + GiST geography |
 | `/exposure` (50km)    | ~100ms          | Same strategy, more cells                    |
+| `/analyse` (on land)  | ~10ms           | KNN + single grid check                      |
+| `/analyse` (ocean)    | ~50–3000ms      | Auto-expanding radius until population found |
 | `/country`            | ~10ms           | `ST_Contains` with GiST index                |
 
 Key optimizations:
