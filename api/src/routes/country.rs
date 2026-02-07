@@ -1,11 +1,10 @@
 use actix_web::{web, HttpResponse, Result as ActixResult};
 use deadpool_postgres::Pool;
-use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::errors::AppError;
-use crate::models::requests::{ContinentQuery, Iso3Path, PointQuery};
-use crate::models::responses::{CountryDetailPayload, CountryListPayload};
+use crate::models::requests::{ContinentQuery, PointQuery};
+use crate::models::responses::CountryListPayload;
 use crate::repositories::CountryRepository;
 use crate::response::ApiResponse;
 use crate::validation::validate_continent;
@@ -26,13 +25,13 @@ pub async fn country_lookup(
     query: web::Query<PointQuery>,
 ) -> ActixResult<HttpResponse> {
     query.validate().map_err(|e| {
-        AppError::Validation(format!("Validation failed: {}", e)).into()
+        AppError::Validation(format!("Validation failed: {}", e))
     })?;
 
     let client = pool.get().await.map_err(AppError::from)?;
     let result = CountryRepository::get_by_coordinate(&client, query.lat, query.lon)
         .await
-        .map_err(|e| AppError::from(e).into())?;
+        .map_err(AppError::from)?;
 
     Ok(ApiResponse::ok(result))
 }
@@ -52,12 +51,12 @@ pub async fn country_by_iso3(
     pool: web::Data<Pool>,
     path: web::Path<String>,
 ) -> ActixResult<HttpResponse> {
-    let iso3 = crate::validation::validate_iso3(&path.into_inner()).map_err(|e| e.into())?;
+    let iso3 = crate::validation::validate_iso3(&path.into_inner())?;
 
     let client = pool.get().await.map_err(AppError::from)?;
     let result = CountryRepository::get_by_iso3(&client, &iso3)
         .await
-        .map_err(|e| AppError::from(e).into())?;
+        .map_err(AppError::from)?;
 
     Ok(ApiResponse::ok(result))
 }
@@ -77,14 +76,14 @@ pub async fn countries_by_continent(
     query: web::Query<ContinentQuery>,
 ) -> ActixResult<HttpResponse> {
     query.validate().map_err(|e| {
-        AppError::Validation(format!("Validation failed: {}", e)).into()
+        AppError::Validation(format!("Validation failed: {}", e))
     })?;
 
-    let continent = validate_continent(&query.continent).map_err(|e| e.into())?;
+    let continent = validate_continent(&query.continent)?;
     let client = pool.get().await.map_err(AppError::from)?;
     let countries = CountryRepository::get_by_continent(&client, &continent)
         .await
-        .map_err(|e| AppError::from(e).into())?;
+        .map_err(AppError::from)?;
 
     Ok(ApiResponse::ok(CountryListPayload {
         continent: query.continent.clone(),
