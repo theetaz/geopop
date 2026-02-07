@@ -37,8 +37,9 @@ use crate::config::API_PREFIX;
         routes::country::countries_by_continent,
     ),
     components(schemas(
-        models::PointQuery, models::PointPayload,
+        models::PointQuery, models::PopulationQuery, models::PointPayload,
         models::BatchQuery, models::BatchPayload,
+        models::PopulationGridPayload, models::GridCell, models::CellBounds,
         models::HealthPayload, models::ReversePayload,
         models::ExposureQuery, models::ExposurePayload,
         models::ExposedPlace, models::CoordinateInfo,
