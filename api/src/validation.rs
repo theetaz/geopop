@@ -8,22 +8,22 @@ pub const VALID_CONTINENTS: &[&str] = &[
     "north-america", "south-america",
 ];
 
-pub fn validate_lat(lat: &f64) -> Result<(), ValidationError> {
-    if !lat.is_finite() || *lat < -90.0 || *lat > 90.0 {
+pub fn validate_lat(lat: f64) -> Result<(), ValidationError> {
+    if !lat.is_finite() || lat < -90.0 || lat > 90.0 {
         return Err(ValidationError::new("latitude"));
     }
     Ok(())
 }
 
-pub fn validate_lon(lon: &f64) -> Result<(), ValidationError> {
-    if !lon.is_finite() || *lon < -180.0 || *lon >= 180.0 {
+pub fn validate_lon(lon: f64) -> Result<(), ValidationError> {
+    if !lon.is_finite() || lon < -180.0 || lon >= 180.0 {
         return Err(ValidationError::new("longitude"));
     }
     Ok(())
 }
 
-pub fn validate_radius_field(radius: &f64) -> Result<(), ValidationError> {
-    if !radius.is_finite() || *radius <= 0.0 || *radius > MAX_RADIUS_KM {
+pub fn validate_radius_field(radius: f64) -> Result<(), ValidationError> {
+    if !radius.is_finite() || radius <= 0.0 || radius > MAX_RADIUS_KM {
         return Err(ValidationError::new("radius"));
     }
     Ok(())
