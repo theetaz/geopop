@@ -1,3 +1,4 @@
+pub(crate) mod analyse;
 pub(crate) mod country;
 pub(crate) mod exposure;
 pub(crate) mod geocoding;
