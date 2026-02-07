@@ -3,8 +3,7 @@ use deadpool_postgres::Pool;
 use validator::Validate;
 
 use crate::errors::AppError;
-use crate::models::requests::{BatchQuery, PointQuery};
-use crate::models::responses::{BatchPayload, PointPayload};
+use crate::models::{BatchPayload, BatchQuery, PointPayload, PointQuery};
 use crate::repositories::PopulationRepository;
 use crate::response::ApiResponse;
 use crate::validation::validate_batch_size;
@@ -19,18 +18,16 @@ use crate::validation::validate_batch_size;
         (status = 400, description = "Invalid coordinates")
     )
 )]
-pub async fn get_population(
+pub(crate) async fn get_population(
     pool: web::Data<Pool>,
     query: web::Query<PointQuery>,
 ) -> ActixResult<HttpResponse> {
     query.validate().map_err(|e| {
-        AppError::Validation(format!("Validation failed: {}", e))
+        AppError::Validation(format!("Validation failed: {e}"))
     })?;
 
     let client = pool.get().await.map_err(AppError::from)?;
-    let population = PopulationRepository::get_population(&client, query.lat, query.lon)
-        .await
-        .map_err(AppError::from)?;
+    let population = PopulationRepository::get_population(&client, query.lat, query.lon).await?;
 
     Ok(ApiResponse::ok(PointPayload {
         lat: query.lat,
@@ -50,21 +47,18 @@ pub async fn get_population(
         (status = 400, description = "Invalid request")
     )
 )]
-pub async fn batch_population(
+pub(crate) async fn batch_population(
     pool: web::Data<Pool>,
     body: web::Json<BatchQuery>,
 ) -> ActixResult<HttpResponse> {
     body.validate().map_err(|e| {
-        AppError::Validation(format!("Validation failed: {}", e))
+        AppError::Validation(format!("Validation failed: {e}"))
     })?;
-
     validate_batch_size(body.points.len())?;
 
     let client = pool.get().await.map_err(AppError::from)?;
     let points: Vec<(f64, f64)> = body.points.iter().map(|p| (p.lat, p.lon)).collect();
-    let populations = PopulationRepository::get_batch_population(&client, &points)
-        .await
-        .map_err(AppError::from)?;
+    let populations = PopulationRepository::get_batch_population(&client, &points).await?;
 
     let results: Vec<PointPayload> = body
         .points
