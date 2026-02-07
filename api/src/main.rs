@@ -91,14 +91,15 @@ async fn main() -> std::io::Result<()> {
     openapi.servers = Some(vec![Server::new(API_PREFIX)]);
 
     let openapi_url: &'static str = Box::leak(format!("{API_PREFIX}/openapi.json").into_boxed_str());
+    let docs_path: &'static str = Box::leak(format!("{API_PREFIX}/docs/{{_:.*}}").into_boxed_str());
 
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
             .app_data(web::Data::new(pool.clone()))
+            .service(SwaggerUi::new(docs_path).url(openapi_url, openapi.clone()))
             .service(
                 web::scope(API_PREFIX)
-                    .service(SwaggerUi::new("/docs/{_:.*}").url(openapi_url, openapi.clone()))
                     .route("/health", web::get().to(routes::health::health))
                     .route("/population", web::get().to(routes::population::get_population))
                     .route("/population/batch", web::post().to(routes::population::batch_population))
