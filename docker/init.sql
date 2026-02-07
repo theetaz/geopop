@@ -36,6 +36,8 @@ CREATE TABLE countries (
     continent   TEXT NOT NULL,
     region_un   TEXT,
     subregion   TEXT,
+    type        TEXT,
+    sovereign   BOOLEAN NOT NULL DEFAULT true,
     pop_est     BIGINT,
     geom        GEOMETRY(MultiPolygon, 4326) NOT NULL
 );
@@ -44,6 +46,7 @@ CREATE INDEX idx_countries_geom      ON countries USING GiST (geom);
 CREATE INDEX idx_countries_iso_a2    ON countries (iso_a2);
 CREATE INDEX idx_countries_iso_a3    ON countries (iso_a3);
 CREATE INDEX idx_countries_continent ON countries (LOWER(continent));
+CREATE INDEX idx_countries_region_un ON countries (LOWER(region_un));
 
 -- ── GeoNames reverse geocoding ──
 
