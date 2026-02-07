@@ -58,18 +58,23 @@ impl GeocodingRepository {
             .iter()
             .map(|row| {
                 let name: String = row.get(1);
+                let place_lat: f64 = row.get(2);
+                let place_lon: f64 = row.get(3);
                 let fc = row.get::<_, Option<String>>(4).unwrap_or_default();
                 let cc = row.get::<_, Option<String>>(5).unwrap_or_default();
                 let (display_name, address) = Self::build_address(row, &name, &fc, &cc);
+                let bearing = bearing_deg(lat, lon, place_lat, place_lon);
 
                 ExposedPlace {
                     place_id: row.get(0),
-                    lat: format!("{}", row.get::<_, f64>(2)),
-                    lon: format!("{}", row.get::<_, f64>(3)),
+                    lat: format!("{place_lat}"),
+                    lon: format!("{place_lon}"),
                     name,
                     display_name,
                     address,
                     distance_km: round2(row.get::<_, f64>(11)),
+                    direction: compass_direction(bearing),
+                    bearing_deg: round1(bearing),
                 }
             })
             .collect())
@@ -102,7 +107,7 @@ impl GeocodingRepository {
 
         let mut address = HashMap::with_capacity(5);
         address.insert(Self::feature_code_to_address_key(fc).into(), name.to_string());
-        if let Some(a2) = admin2 { address.insert("county".into(), a2); }
+        if let Some(a2) = admin2 { address.insert("district".into(), a2); }
         if let Some(a1) = admin1 { address.insert("state".into(), a1); }
         if let Some(cn) = country { address.insert("country".into(), cn); }
         if !cc.is_empty() { address.insert("country_code".into(), cc.to_lowercase()); }
@@ -128,6 +133,26 @@ impl GeocodingRepository {
 }
 
 #[inline]
+fn round1(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+
+#[inline]
 fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
+}
+
+/// Compute initial bearing (forward azimuth) from point 1 to point 2 in degrees (0–360).
+fn bearing_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let (lat1, lat2) = (lat1.to_radians(), lat2.to_radians());
+    let d_lon = (lon2 - lon1).to_radians();
+    let x = d_lon.sin() * lat2.cos();
+    let y = lat1.cos() * lat2.sin() - lat1.sin() * lat2.cos() * d_lon.cos();
+    (x.atan2(y).to_degrees() + 360.0) % 360.0
+}
+
+/// Convert a bearing in degrees to an 8-point compass direction.
+fn compass_direction(deg: f64) -> String {
+    const DIRS: [&str; 8] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    DIRS[((deg + 22.5) % 360.0 / 45.0) as usize].into()
 }
