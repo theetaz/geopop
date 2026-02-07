@@ -3,45 +3,74 @@ use deadpool_postgres::Pool;
 use validator::Validate;
 
 use crate::errors::AppError;
-use crate::models::{BatchPayload, BatchQuery, PointPayload, PointQuery};
+use crate::models::{
+    BatchPayload, BatchQuery, CoordinateInfo, PointPayload, PointQuery,
+    PopulationGridPayload, PopulationQuery,
+};
 use crate::repositories::PopulationRepository;
 use crate::response::ApiResponse;
 use crate::validation::validate_batch_size;
 
-/// Look up estimated population at a single coordinate.
+/// Look up population at a coordinate, optionally within a radius to get individual grid cells.
 #[utoipa::path(
     get,
     path = "/population",
     tag = "Population",
-    summary = "Population at a coordinate",
-    description = "Returns the estimated population for the 1 km² WorldPop grid cell that contains \
-        the given coordinate. Data source: WorldPop 2025 Unconstrained 1 km resolution.",
+    summary = "Population lookup",
+    description = "Without `radius`: returns the estimated population for the single 1 km² WorldPop \
+        grid cell at the given coordinate.\n\n\
+        With `radius` (max 10 km): returns all non-empty 1 km² grid cells within the circle, \
+        including each cell's centre point and geographic bounds — ideal for map visualisation. \
+        Cells are sorted by population descending.\n\n\
+        Data source: WorldPop 2025 Unconstrained 1 km resolution.",
     params(
         ("lat" = f64, Query, description = "Latitude in decimal degrees", example = 6.9271, minimum = -90, maximum = 90),
-        ("lon" = f64, Query, description = "Longitude in decimal degrees", example = 79.8612, minimum = -180, maximum = 180)
+        ("lon" = f64, Query, description = "Longitude in decimal degrees", example = 79.8612, minimum = -180, maximum = 180),
+        ("radius" = Option<f64>, Query, description = "Optional search radius in km. When provided, returns all non-empty grid cells within the circle (max: 10 km).", example = 5.0)
     ),
     responses(
-        (status = 200, description = "Population at the given coordinate", body = PointPayload),
-        (status = 400, description = "Invalid or out-of-range coordinates")
+        (status = 200, description = "Population data — single cell (no radius) or grid cells (with radius)"),
+        (status = 400, description = "Invalid coordinates or radius out of range (0–10 km)")
     )
 )]
 pub(crate) async fn get_population(
     pool: web::Data<Pool>,
-    query: web::Query<PointQuery>,
+    query: web::Query<PopulationQuery>,
 ) -> ActixResult<HttpResponse> {
     query.validate().map_err(|e| {
         AppError::Validation(format!("Validation failed: {e}"))
     })?;
 
     let client = pool.get().await.map_err(AppError::from)?;
-    let population = PopulationRepository::get_population(&client, query.lat, query.lon).await?;
 
-    Ok(ApiResponse::ok(PointPayload {
-        lat: query.lat,
-        lon: query.lon,
-        population,
-        resolution_km: 1.0,
-    }))
+    match query.radius {
+        Some(radius_km) => {
+            let cells = PopulationRepository::get_grid_cells(
+                &client, query.lat, query.lon, radius_km,
+            ).await?;
+            let total: f64 = cells.iter().map(|c| c.population as f64).sum();
+
+            Ok(ApiResponse::ok(PopulationGridPayload {
+                coordinate: CoordinateInfo { lat: query.lat, lon: query.lon },
+                radius_km,
+                total_population: (total * 10.0).round() / 10.0,
+                cell_count: cells.len(),
+                cells,
+            }))
+        }
+        None => {
+            let population = PopulationRepository::get_population(
+                &client, query.lat, query.lon,
+            ).await?;
+
+            Ok(ApiResponse::ok(PointPayload {
+                lat: query.lat,
+                lon: query.lon,
+                population,
+                resolution_km: 1.0,
+            }))
+        }
+    }
 }
 
 /// Look up estimated population for multiple coordinates in a single request.
