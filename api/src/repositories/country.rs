@@ -1,8 +1,8 @@
 use crate::errors::AppError;
-use crate::models::responses::{CountryDetailPayload, CountryPayload};
+use crate::models::{CountryDetailPayload, CountryPayload};
 use deadpool_postgres::Object;
 
-pub struct CountryRepository;
+pub(crate) struct CountryRepository;
 
 impl CountryRepository {
     pub async fn get_by_coordinate(
@@ -27,7 +27,7 @@ impl CountryRepository {
                 client
                     .query_opt(fallback, &[&lon, &lat])
                     .await?
-                    .ok_or_else(|| AppError::NotFound("No country found at this coordinate".to_string()))?
+                    .ok_or_else(|| AppError::NotFound("No country found at this coordinate".into()))?
             }
         };
 
@@ -47,7 +47,7 @@ impl CountryRepository {
         let row = client
             .query_opt(sql, &[&iso3])
             .await?
-            .ok_or_else(|| AppError::NotFound(format!("Country not found: {}", iso3)))?;
+            .ok_or_else(|| AppError::NotFound(format!("Country not found: {iso3}")))?;
 
         Ok(CountryDetailPayload {
             iso_a2: row.get::<_, Option<String>>(0).map(|s| s.trim().to_string()),
@@ -71,31 +71,19 @@ impl CountryRepository {
 
         let rows = if continent == "americas" {
             client
-                .query(
-                    &format!("{base} AND LOWER(region_un) = 'americas' ORDER BY name"),
-                    &[],
-                )
+                .query(&format!("{base} AND LOWER(region_un) = 'americas' ORDER BY name"), &[])
                 .await?
         } else if continent == "north-america" {
             client
-                .query(
-                    &format!("{base} AND LOWER(continent) = 'north america' ORDER BY name"),
-                    &[],
-                )
+                .query(&format!("{base} AND LOWER(continent) = 'north america' ORDER BY name"), &[])
                 .await?
         } else if continent == "south-america" {
             client
-                .query(
-                    &format!("{base} AND LOWER(continent) = 'south america' ORDER BY name"),
-                    &[],
-                )
+                .query(&format!("{base} AND LOWER(continent) = 'south america' ORDER BY name"), &[])
                 .await?
         } else {
             client
-                .query(
-                    &format!("{base} AND LOWER(region_un) = LOWER($1) ORDER BY name"),
-                    &[&continent],
-                )
+                .query(&format!("{base} AND LOWER(region_un) = LOWER($1) ORDER BY name"), &[&continent])
                 .await?
         };
 
