@@ -1,5 +1,4 @@
-use actix_web::{web, HttpResponse};
-use utoipa::OpenApi;
+use actix_web::HttpResponse;
 
 use crate::models::responses::HealthPayload;
 use crate::response::ApiResponse;
