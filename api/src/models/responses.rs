@@ -272,3 +272,68 @@ pub struct CountryListPayload {
     /// Country list
     pub countries: Vec<CountryPayload>,
 }
+
+/// Nearest named place to the epicentre with distance and direction.
+#[derive(Serialize, ToSchema)]
+#[schema(example = json!({
+    "place_id": 1325189, "name": "Hetsaw",
+    "display_name": "Hetsaw, Kyaunkpyu District, Rakhine, Myanmar",
+    "address": {"city": "Hetsaw", "district": "Kyaunkpyu District", "state": "Rakhine", "country": "Myanmar", "country_code": "mm"},
+    "distance_km": 4.69, "direction": "SW", "bearing_deg": 233.3
+}))]
+pub struct NearestPlace {
+    /// GeoNames place identifier
+    #[schema(example = 1325189)]
+    pub place_id: i32,
+    /// Place name
+    #[schema(example = "Hetsaw")]
+    pub name: String,
+    /// Full display name including administrative hierarchy
+    #[schema(example = "Hetsaw, Kyaunkpyu District, Rakhine, Myanmar")]
+    pub display_name: String,
+    /// Structured address components (city, district, state, country, country_code)
+    pub address: HashMap<String, String>,
+    /// Distance from the epicentre in kilometres
+    #[schema(example = 4.69)]
+    pub distance_km: f64,
+    /// Compass direction from the epicentre (N, NE, E, SE, S, SW, W, NW)
+    #[schema(example = "SW")]
+    pub direction: String,
+    /// Bearing from the epicentre in degrees (0 = North, 90 = East)
+    #[schema(example = 233.3)]
+    pub bearing_deg: f64,
+}
+
+/// Population summary found via auto-expanding radius search.
+#[derive(Serialize, ToSchema)]
+#[schema(example = json!({"search_radius_km": 5.0, "total_population": 426.0, "area_km2": 78.54, "density_per_km2": 5.4, "epicentre_population": 5.16}))]
+pub struct PopulationSummary {
+    /// Radius (km) at which population was found (indicates remoteness)
+    #[schema(example = 5.0)]
+    pub search_radius_km: f64,
+    /// Total population within the search radius
+    #[schema(example = 426.0)]
+    pub total_population: f64,
+    /// Area of the search circle in km²
+    #[schema(example = 78.54)]
+    pub area_km2: f64,
+    /// Average population density (people/km²) within the search radius
+    #[schema(example = 5.4)]
+    pub density_per_km2: f64,
+    /// Population at the exact epicentre grid cell (0 if ocean/desert)
+    #[schema(example = 5.16)]
+    pub epicentre_population: f32,
+}
+
+/// Comprehensive disaster impact analysis for a coordinate.
+#[derive(Serialize, ToSchema)]
+pub struct AnalysePayload {
+    /// Epicentre coordinate
+    pub coordinate: CoordinateInfo,
+    /// Country the epicentre is in (or nearest to, if in ocean)
+    pub country: CountryPayload,
+    /// Nearest named place from GeoNames with distance and direction
+    pub nearest_place: NearestPlace,
+    /// Population summary from auto-expanding radius search
+    pub population: PopulationSummary,
+}
