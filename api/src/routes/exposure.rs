@@ -19,18 +19,25 @@ fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
+/// Analyse population exposure within a circular area around a coordinate.
 #[utoipa::path(
     get,
     path = "/exposure",
     tag = "Risk Assessment",
+    summary = "Population exposure analysis",
+    description = "Calculates the total estimated population within a circular area of the given \
+        radius around the coordinate. Also returns population density metrics and a list of \
+        named places found inside the search area. Useful for disaster risk assessment, \
+        infrastructure planning, and impact analysis.\n\n\
+        The analysis combines WorldPop 1 km grid data with GeoNames place data.",
     params(
-        ("lat" = f64, Query),
-        ("lon" = f64, Query),
-        ("radius" = Option<f64>, Query, description = "Radius in km (default: 1, max: 500)")
+        ("lat" = f64, Query, description = "Centre latitude in decimal degrees", example = 6.9271, minimum = -90, maximum = 90),
+        ("lon" = f64, Query, description = "Centre longitude in decimal degrees", example = 79.8612, minimum = -180, maximum = 180),
+        ("radius" = Option<f64>, Query, description = "Search radius in kilometres (default: 1, max: 500)", example = 10.0)
     ),
     responses(
-        (status = 200, description = "Exposure analysis"),
-        (status = 400, description = "Invalid parameters")
+        (status = 200, description = "Exposure analysis results", body = ExposurePayload),
+        (status = 400, description = "Invalid coordinates or radius out of range (0–500 km)")
     )
 )]
 pub(crate) async fn exposure(
