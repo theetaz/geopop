@@ -1,9 +1,9 @@
 use crate::errors::AppError;
-use crate::models::responses::{ExposedPlace, ReversePayload};
+use crate::models::{ExposedPlace, ReversePayload};
 use deadpool_postgres::Object;
 use std::collections::HashMap;
 
-pub struct GeocodingRepository;
+pub(crate) struct GeocodingRepository;
 
 impl GeocodingRepository {
     pub async fn reverse_geocode(
@@ -26,7 +26,7 @@ impl GeocodingRepository {
         let row = client
             .query_opt(sql, &[&lon, &lat])
             .await?
-            .ok_or_else(|| AppError::NotFound("No nearby place found".to_string()))?;
+            .ok_or_else(|| AppError::NotFound("No nearby place found".into()))?;
 
         Ok(Self::build_reverse_payload(&row))
     }
@@ -69,7 +69,7 @@ impl GeocodingRepository {
                     name,
                     display_name,
                     address,
-                    distance_km: Self::round2(row.get::<_, f64>(11)),
+                    distance_km: round2(row.get::<_, f64>(11)),
                 }
             })
             .collect())
@@ -95,31 +95,17 @@ impl GeocodingRepository {
         let country: Option<String> = row.get(10);
 
         let mut parts = vec![name.to_string()];
-        if let Some(ref a2) = admin2 {
-            parts.push(a2.clone());
-        }
-        if let Some(ref a1) = admin1 {
-            parts.push(a1.clone());
-        }
-        if let Some(ref cn) = country {
-            parts.push(cn.clone());
-        }
+        if let Some(ref a2) = admin2 { parts.push(a2.clone()); }
+        if let Some(ref a1) = admin1 { parts.push(a1.clone()); }
+        if let Some(ref cn) = country { parts.push(cn.clone()); }
         let display_name = parts.join(", ");
 
-        let mut address = HashMap::new();
+        let mut address = HashMap::with_capacity(5);
         address.insert(Self::feature_code_to_address_key(fc).into(), name.to_string());
-        if let Some(a2) = admin2 {
-            address.insert("county".into(), a2);
-        }
-        if let Some(a1) = admin1 {
-            address.insert("state".into(), a1);
-        }
-        if let Some(cn) = country {
-            address.insert("country".into(), cn);
-        }
-        if !cc.is_empty() {
-            address.insert("country_code".into(), cc.to_lowercase());
-        }
+        if let Some(a2) = admin2 { address.insert("county".into(), a2); }
+        if let Some(a1) = admin1 { address.insert("state".into(), a1); }
+        if let Some(cn) = country { address.insert("country".into(), cn); }
+        if !cc.is_empty() { address.insert("country_code".into(), cc.to_lowercase()); }
 
         (display_name, address)
     }
@@ -139,8 +125,9 @@ impl GeocodingRepository {
             address,
         }
     }
+}
 
-    fn round2(v: f64) -> f64 {
-        (v * 100.0).round() / 100.0
-    }
+#[inline]
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
 }
