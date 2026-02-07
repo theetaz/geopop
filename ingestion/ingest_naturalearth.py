@@ -53,8 +53,8 @@ def ingest(shp_path: str, db_url: str) -> None:
     count = skipped = 0
     insert_sql = """
         INSERT INTO countries (iso_a2, iso_a3, name, formal_name,
-            continent, region_un, subregion, pop_est, geom)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, ST_GeomFromEWKT(%s))
+            continent, region_un, subregion, type, sovereign, pop_est, geom)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, ST_GeomFromEWKT(%s))
     """
 
     with fiona.open(shp_path) as src:
@@ -70,6 +70,11 @@ def ingest(shp_path: str, db_url: str) -> None:
             iso_a3 = p.get("ISO_A3_EH", "")
             iso_a2 = None if iso_a2 in ("-99", "-1", "") else iso_a2
             iso_a3 = None if iso_a3 in ("-99", "-1", "") else iso_a3
+
+            ne_type = p.get("TYPE", "")
+            admin = p.get("ADMIN", "")
+            sovereignt = p.get("SOVEREIGNT", "")
+            sovereign = (admin == sovereignt) and ne_type not in ("Indeterminate", "Dependency", "Lease")
 
             pop_est = p.get("POP_EST")
             try:
@@ -88,7 +93,7 @@ def ingest(shp_path: str, db_url: str) -> None:
                 cur.execute(insert_sql, (
                     iso_a2, iso_a3, name, p.get("FORMAL_EN") or None,
                     continent, p.get("REGION_UN") or None, p.get("SUBREGION") or None,
-                    pop_est, f"SRID=4326;{geom.wkt}",
+                    ne_type or None, sovereign, pop_est, f"SRID=4326;{geom.wkt}",
                 ))
             count += 1
             if count % 50 == 0:
