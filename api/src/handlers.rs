@@ -371,7 +371,7 @@ pub async fn country_by_iso3(pool: web::Data<Pool>, path: web::Path<String>) -> 
     let sql = r#"
         SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion,
                pop_est, ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
-        FROM countries WHERE UPPER(iso_a3) = $1 LIMIT 1
+        FROM countries WHERE UPPER(iso_a3) = $1 ORDER BY sovereign DESC LIMIT 1
     "#;
 
     let row = match client.query_opt(sql, &[&iso3]).await {
@@ -415,15 +415,15 @@ pub async fn countries_by_continent(pool: web::Data<Pool>, query: web::Query<Con
     let rows = if continent == "americas" {
         client.query(
             "SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion \
-             FROM countries WHERE LOWER(continent) IN ('north america', 'south america') \
-             AND iso_a2 IS NOT NULL AND iso_a3 IS NOT NULL ORDER BY name",
+             FROM countries WHERE LOWER(region_un) = 'americas' \
+             AND sovereign = true AND iso_a2 IS NOT NULL AND iso_a3 IS NOT NULL ORDER BY name",
             &[],
         ).await
     } else {
         client.query(
             "SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion \
-             FROM countries WHERE LOWER(continent) = LOWER($1) \
-             AND iso_a2 IS NOT NULL AND iso_a3 IS NOT NULL ORDER BY name",
+             FROM countries WHERE LOWER(region_un) = LOWER($1) \
+             AND sovereign = true AND iso_a2 IS NOT NULL AND iso_a3 IS NOT NULL ORDER BY name",
             &[&continent],
         ).await
     };
