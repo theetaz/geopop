@@ -84,11 +84,17 @@ pub struct ExposedPlace {
     /// Full display name
     #[schema(example = "Colombo, Western Province, Sri Lanka")]
     pub display_name: String,
-    /// Structured address components
+    /// Structured address components (city, district, state, country, country_code)
     pub address: HashMap<String, String>,
-    /// Distance from the query coordinate in kilometres
+    /// Distance from the epicentre in kilometres
     #[schema(example = 3.2)]
     pub distance_km: f64,
+    /// Compass direction from the epicentre (N, NE, E, SE, S, SW, W, NW)
+    #[schema(example = "SW")]
+    pub direction: String,
+    /// Bearing from the epicentre in degrees (0 = North, 90 = East, 180 = South, 270 = West)
+    #[schema(example = 225.3)]
+    pub bearing_deg: f64,
 }
 
 /// Coordinate pair used in exposure results.
