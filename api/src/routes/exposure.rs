@@ -1,6 +1,5 @@
 use actix_web::{web, HttpResponse, Result as ActixResult};
 use deadpool_postgres::Pool;
-use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::errors::AppError;
@@ -38,7 +37,7 @@ pub async fn exposure(
     query: web::Query<ExposureQuery>,
 ) -> ActixResult<HttpResponse> {
     query.validate().map_err(|e| {
-        AppError::Validation(format!("Validation failed: {}", e)).into()
+        AppError::Validation(format!("Validation failed: {}", e))
     })?;
 
     let client = pool.get().await.map_err(AppError::from)?;
@@ -48,7 +47,7 @@ pub async fn exposure(
 
     let total_pop = PopulationRepository::get_exposure_population(&client, lat, lon, radius_km)
         .await
-        .map_err(|e| AppError::from(e).into())?;
+        .map_err(AppError::from)?;
     let places = GeocodingRepository::get_exposed_places(&client, lat, lon, radius_km)
         .await
         .unwrap_or_default();
