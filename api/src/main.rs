@@ -11,8 +11,11 @@ use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
 use deadpool_postgres::{Config as PgConfig, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
+use utoipa::openapi::Server;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+
+use crate::config::API_PREFIX;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -59,7 +62,7 @@ async fn main() -> std::io::Result<()> {
 
     let pg_config: tokio_postgres::Config = cfg.database_url
         .parse()
-        .expect("Invalid DATABASE_URL");
+        .expect("invalid DATABASE_URL");
 
     let mut pool_cfg = PgConfig::new();
     if let Some(host) = pg_config.get_hosts().first() {
@@ -78,25 +81,33 @@ async fn main() -> std::io::Result<()> {
     pool_cfg.pool = Some(PoolConfig::new(cfg.pool_size));
 
     let pool = pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)
-        .expect("Failed to create connection pool");
+        .expect("failed to create connection pool");
 
     let bind = format!("{}:{}", cfg.host, cfg.port);
     log::info!("Starting GeoPop API on {bind}");
-    log::info!("Swagger UI: http://{bind}/swagger-ui/");
+    log::info!("Swagger UI: http://{bind}{API_PREFIX}/docs/");
+
+    let mut openapi = ApiDoc::openapi();
+    openapi.servers = Some(vec![Server::new(API_PREFIX)]);
+
+    let openapi_url: &'static str = Box::leak(format!("{API_PREFIX}/openapi.json").into_boxed_str());
 
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
             .app_data(web::Data::new(pool.clone()))
-            .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()))
-            .route("/health", web::get().to(routes::health::health))
-            .route("/population", web::get().to(routes::population::get_population))
-            .route("/population/batch", web::post().to(routes::population::batch_population))
-            .route("/reverse", web::get().to(routes::geocoding::reverse_geocode))
-            .route("/exposure", web::get().to(routes::exposure::exposure))
-            .route("/country", web::get().to(routes::country::country_lookup))
-            .route("/country/{iso3}", web::get().to(routes::country::country_by_iso3))
-            .route("/countries", web::get().to(routes::country::countries_by_continent))
+            .service(
+                web::scope(API_PREFIX)
+                    .service(SwaggerUi::new("/docs/{_:.*}").url(openapi_url, openapi.clone()))
+                    .route("/health", web::get().to(routes::health::health))
+                    .route("/population", web::get().to(routes::population::get_population))
+                    .route("/population/batch", web::post().to(routes::population::batch_population))
+                    .route("/reverse", web::get().to(routes::geocoding::reverse_geocode))
+                    .route("/exposure", web::get().to(routes::exposure::exposure))
+                    .route("/country", web::get().to(routes::country::country_lookup))
+                    .route("/country/{iso3}", web::get().to(routes::country::country_by_iso3))
+                    .route("/countries", web::get().to(routes::country::countries_by_continent))
+            )
     })
     .bind(&bind)?
     .run()
