@@ -1,6 +1,6 @@
 use actix_web::HttpResponse;
 
-use crate::models::responses::HealthPayload;
+use crate::models::HealthPayload;
 use crate::response::ApiResponse;
 
 #[utoipa::path(
@@ -9,8 +9,8 @@ use crate::response::ApiResponse;
     tag = "System",
     responses((status = 200, description = "Service is healthy"))
 )]
-pub async fn health() -> HttpResponse {
+pub(crate) async fn health() -> HttpResponse {
     ApiResponse::ok(HealthPayload {
-        status: "ok".to_string(),
+        status: "ok".into(),
     })
 }
