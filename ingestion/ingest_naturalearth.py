@@ -5,10 +5,21 @@ Loads ISO codes, names, continent, region, population estimates,
 and MultiPolygon geometries into the countries table.
 """
 
-import os, sys
+import os, sys, time
 import fiona
 import psycopg
 from shapely.geometry import shape, MultiPolygon
+
+
+def connect(db_url: str, retries: int = 30) -> psycopg.Connection:
+    for attempt in range(retries):
+        try:
+            return psycopg.connect(db_url, connect_timeout=5)
+        except psycopg.OperationalError:
+            if attempt == retries - 1:
+                raise
+            print(f"  DB not ready (attempt {attempt + 1}/{retries}), retrying...")
+            time.sleep(2)
 
 
 def get_db_url() -> str:
@@ -32,7 +43,7 @@ def find_shapefile() -> str:
 
 def ingest(shp_path: str, db_url: str) -> None:
     print(f"Opening shapefile: {shp_path}")
-    conn = psycopg.connect(db_url)
+    conn = connect(db_url)
     conn.autocommit = False
 
     with conn.cursor() as cur:

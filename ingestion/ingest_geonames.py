@@ -13,6 +13,17 @@ import psycopg
 BATCH_SIZE = 100_000
 
 
+def connect(db_url: str, retries: int = 30) -> psycopg.Connection:
+    for attempt in range(retries):
+        try:
+            return psycopg.connect(db_url, connect_timeout=5)
+        except psycopg.OperationalError:
+            if attempt == retries - 1:
+                raise
+            print(f"  DB not ready (attempt {attempt + 1}/{retries}), retrying...")
+            time.sleep(2)
+
+
 def get_db_url() -> str:
     if url := os.environ.get("DATABASE_URL"):
         return url
@@ -130,7 +141,7 @@ def main():
         print(f"ERROR: {data_dir} not found. Run: make download-geonames")
         sys.exit(1)
 
-    conn = psycopg.connect(db_url)
+    conn = connect(db_url)
     conn.autocommit = False
 
     print("Loading lookup tables...")

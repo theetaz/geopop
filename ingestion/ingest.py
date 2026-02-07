@@ -16,6 +16,17 @@ NROWS = 21600   # 180° × 120
 BATCH_SIZE = 500_000
 
 
+def connect(db_url: str, retries: int = 30) -> psycopg.Connection:
+    for attempt in range(retries):
+        try:
+            return psycopg.connect(db_url, connect_timeout=5)
+        except psycopg.OperationalError:
+            if attempt == retries - 1:
+                raise
+            print(f"  DB not ready (attempt {attempt + 1}/{retries}), retrying...")
+            time.sleep(2)
+
+
 def get_db_url() -> str:
     if url := os.environ.get("DATABASE_URL"):
         return url
@@ -51,7 +62,7 @@ def ingest(tif_path: str, db_url: str) -> None:
         col_lons = t.c + (np.arange(src.width) + 0.5) * t.a
         canonical_cols = np.floor((col_lons + 180.0) * 120.0).astype(np.int64)
 
-        conn = psycopg.connect(db_url)
+        conn = connect(db_url)
         conn.autocommit = False
 
         with conn.cursor() as cur:

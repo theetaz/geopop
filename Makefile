@@ -3,7 +3,14 @@
        ingest-worldpop ingest-naturalearth ingest-geonames ingest-all \
        setup api-build test bench clean
 
-API_URL ?= http://localhost:8080
+# Load .env and export every variable to recipe sub-processes
+ifneq (,$(wildcard .env))
+include .env
+export POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DB_PORT API_PORT POOL_SIZE DATABASE_URL
+endif
+
+API_PORT ?= 8080
+API_URL  ?= http://localhost:$(API_PORT)
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -39,15 +46,15 @@ download-all: download-worldpop download-naturalearth download-geonames ## Downl
 
 ingest-worldpop: ## Ingest WorldPop into database
 	pip install -q -r ingestion/requirements.txt
-	python ingestion/ingest.py
+	python -u ingestion/ingest.py
 
 ingest-naturalearth: ## Ingest Natural Earth into database
 	pip install -q -r ingestion/requirements.txt
-	python ingestion/ingest_naturalearth.py
+	python -u ingestion/ingest_naturalearth.py
 
 ingest-geonames: ## Ingest GeoNames into database
 	pip install -q -r ingestion/requirements.txt
-	python ingestion/ingest_geonames.py
+	python -u ingestion/ingest_geonames.py
 
 ingest-all: ingest-naturalearth ingest-worldpop ingest-geonames ## Ingest all datasets
 
