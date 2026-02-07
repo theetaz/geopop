@@ -66,13 +66,6 @@ impl From<deadpool_postgres::PoolError> for AppError {
     }
 }
 
-impl From<AppError> for actix_web::Error {
-    fn from(err: AppError) -> Self {
-        actix_web::error::InternalError::from_response("", err.error_response()).into()
-    }
-}
-
-
 #[derive(Serialize)]
 pub struct ErrorResponse {
     pub code: u16,
