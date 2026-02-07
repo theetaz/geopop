@@ -3,17 +3,18 @@ use deadpool_postgres::Pool;
 use validator::Validate;
 
 use crate::errors::AppError;
-use crate::models::requests::ExposureQuery;
-use crate::models::responses::{CoordinateInfo, ExposurePayload};
+use crate::models::{CoordinateInfo, ExposurePayload, ExposureQuery};
 use crate::repositories::{GeocodingRepository, PopulationRepository};
 use crate::response::ApiResponse;
 
 const KM_PER_DEG: f64 = 111.32;
 
+#[inline]
 fn round1(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 
+#[inline]
 fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
@@ -32,12 +33,12 @@ fn round2(v: f64) -> f64 {
         (status = 400, description = "Invalid parameters")
     )
 )]
-pub async fn exposure(
+pub(crate) async fn exposure(
     pool: web::Data<Pool>,
     query: web::Query<ExposureQuery>,
 ) -> ActixResult<HttpResponse> {
     query.validate().map_err(|e| {
-        AppError::Validation(format!("Validation failed: {}", e))
+        AppError::Validation(format!("Validation failed: {e}"))
     })?;
 
     let client = pool.get().await.map_err(AppError::from)?;
@@ -45,9 +46,7 @@ pub async fn exposure(
 
     let (lat, lon, radius_km) = (query.lat, query.lon, query.radius);
 
-    let total_pop = PopulationRepository::get_exposure_population(&client, lat, lon, radius_km)
-        .await
-        .map_err(AppError::from)?;
+    let total_pop = PopulationRepository::get_exposure_population(&client, lat, lon, radius_km).await?;
     let places = GeocodingRepository::get_exposed_places(&client, lat, lon, radius_km)
         .await
         .unwrap_or_default();
@@ -57,11 +56,7 @@ pub async fn exposure(
 
     let deg = 1.0 / 120.0;
     let cell_area = deg * deg * KM_PER_DEG * KM_PER_DEG * lat.to_radians().cos();
-    let cell_density = if cell_area > 0.0 {
-        cell_pop as f64 / cell_area
-    } else {
-        0.0
-    };
+    let cell_density = if cell_area > 0.0 { cell_pop as f64 / cell_area } else { 0.0 };
     let area = std::f64::consts::PI * radius_km * radius_km;
     let density = if area > 0.0 { total_pop / area } else { 0.0 };
 
