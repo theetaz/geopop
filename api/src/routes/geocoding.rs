@@ -1,6 +1,5 @@
 use actix_web::{web, HttpResponse, Result as ActixResult};
 use deadpool_postgres::Pool;
-use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::errors::AppError;
@@ -24,13 +23,13 @@ pub async fn reverse_geocode(
     query: web::Query<PointQuery>,
 ) -> ActixResult<HttpResponse> {
     query.validate().map_err(|e| {
-        AppError::Validation(format!("Validation failed: {}", e)).into()
+        AppError::Validation(format!("Validation failed: {}", e))
     })?;
 
     let client = pool.get().await.map_err(AppError::from)?;
     let result = GeocodingRepository::reverse_geocode(&client, query.lat, query.lon)
         .await
-        .map_err(|e| AppError::from(e).into())?;
+        .map_err(AppError::from)?;
 
     Ok(ApiResponse::ok(result))
 }
