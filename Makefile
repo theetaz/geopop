@@ -10,7 +10,7 @@ export POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DB_PORT API_PORT POOL_SIZE DA
 endif
 
 API_PORT ?= 8080
-API_URL  ?= http://localhost:$(API_PORT)
+API_URL  ?= http://localhost:$(API_PORT)/api/v1
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
