@@ -13,7 +13,7 @@ Query any coordinate on Earth and get back population estimates, reverse geocodi
 - **Reverse geocoding** — nearest populated place from 4.8M+ GeoNames entries
 - **Exposure analysis** — population within a radius for disaster risk assessment
 - **Country lookup** — point-in-polygon and ISO code lookup with Natural Earth boundaries
-- **Swagger UI** — interactive API docs at `/swagger-ui/`
+- **Swagger UI** — interactive API docs at `/api/v1/docs/`
 
 ## Architecture
 
@@ -73,16 +73,18 @@ make up
 make test
 ```
 
-The API is available at `http://localhost:8080` and Swagger UI at `http://localhost:8080/swagger-ui/`.
+The API is available at `http://localhost:8080/api/v1` and Swagger UI at `http://localhost:8080/api/v1/docs/`.
+
+All routes are prefixed with `/api/v1`. The prefix is defined once in `api/src/config.rs` (`API_PREFIX` constant) — change it there to update all routes, Swagger UI path, and OpenAPI spec simultaneously.
 
 ## API Endpoints
 
-### `GET /population`
+### `GET /api/v1/population`
 
 Population at a single coordinate (1km grid cell).
 
 ```bash
-curl "localhost:8080/population?lat=51.5074&lon=-0.1278"
+curl "localhost:8080/api/v1/population?lat=51.5074&lon=-0.1278"
 ```
 
 ```json
@@ -94,22 +96,22 @@ curl "localhost:8080/population?lat=51.5074&lon=-0.1278"
 }
 ```
 
-### `POST /population/batch`
+### `POST /api/v1/population/batch`
 
 Batch lookup for up to 1,000 coordinates.
 
 ```bash
-curl -X POST "localhost:8080/population/batch" \
+curl -X POST "localhost:8080/api/v1/population/batch" \
   -H "Content-Type: application/json" \
   -d '{"points":[{"lat":51.5074,"lon":-0.1278},{"lat":35.6762,"lon":139.6503}]}'
 ```
 
-### `GET /reverse`
+### `GET /api/v1/reverse`
 
 Nearest populated place (reverse geocoding).
 
 ```bash
-curl "localhost:8080/reverse?lat=35.6762&lon=139.6503"
+curl "localhost:8080/api/v1/reverse?lat=35.6762&lon=139.6503"
 ```
 
 ```json
@@ -126,12 +128,12 @@ curl "localhost:8080/reverse?lat=35.6762&lon=139.6503"
 }
 ```
 
-### `GET /exposure`
+### `GET /api/v1/exposure`
 
 Population exposure within a radius — useful for disaster risk assessment.
 
 ```bash
-curl "localhost:8080/exposure?lat=40.7128&lon=-74.006&radius=10"
+curl "localhost:8080/api/v1/exposure?lat=40.7128&lon=-74.006&radius=10"
 ```
 
 ```json
@@ -145,36 +147,36 @@ curl "localhost:8080/exposure?lat=40.7128&lon=-74.006&radius=10"
 }
 ```
 
-### `GET /country`
+### `GET /api/v1/country`
 
 Country containing a coordinate.
 
 ```bash
-curl "localhost:8080/country?lat=48.8566&lon=2.3522"
+curl "localhost:8080/api/v1/country?lat=48.8566&lon=2.3522"
 ```
 
-### `GET /country/{iso3}`
+### `GET /api/v1/country/{iso3}`
 
 Country details by ISO 3166-1 alpha-3 code.
 
 ```bash
-curl "localhost:8080/country/FRA"
+curl "localhost:8080/api/v1/country/FRA"
 ```
 
-### `GET /countries`
+### `GET /api/v1/countries`
 
 List countries by continent.
 
 ```bash
-curl "localhost:8080/countries?continent=europe"
+curl "localhost:8080/api/v1/countries?continent=europe"
 ```
 
-### `GET /health`
+### `GET /api/v1/health`
 
 Service health check.
 
 ```bash
-curl "localhost:8080/health"
+curl "localhost:8080/api/v1/health"
 ```
 
 ## Performance
@@ -208,10 +210,15 @@ Key optimizations:
 geopop/
 ├── api/                    # Rust API server
 │   ├── src/
-│   │   ├── main.rs         # Server setup, routes, connection pool
+│   │   ├── main.rs         # Server setup, connection pool
 │   │   ├── config.rs       # Environment configuration
+│   │   ├── errors.rs       # Error types and response mapping
 │   │   ├── grid.rs         # Cell ID computation (30 arc-second grid)
-│   │   └── handlers.rs     # Endpoint handlers
+│   │   ├── response.rs     # Unified API response wrapper
+│   │   ├── validation.rs   # Input validation helpers
+│   │   ├── models/         # Request/response data structures
+│   │   ├── repositories/   # Database query layer
+│   │   └── routes/         # Endpoint handlers
 │   ├── Cargo.toml
 │   └── Dockerfile
 ├── docker/                 # Database container
