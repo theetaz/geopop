@@ -30,6 +30,9 @@ pgdata/
 *.swp
 *.swo
 .cursor/
+.cursorrules
+.agents/
+.claude/
 .DS_Store
 
 
