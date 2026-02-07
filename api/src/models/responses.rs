@@ -36,6 +36,58 @@ pub struct BatchPayload {
     pub results: Vec<PointPayload>,
 }
 
+/// Bounding box of a single population grid cell.
+#[derive(Serialize, ToSchema)]
+#[schema(example = json!({"min_lat": 20.4583, "max_lat": 20.4667, "min_lon": 93.9500, "max_lon": 93.9583}))]
+pub struct CellBounds {
+    /// Southern edge latitude
+    #[schema(example = 20.4583)]
+    pub min_lat: f64,
+    /// Northern edge latitude
+    #[schema(example = 20.4667)]
+    pub max_lat: f64,
+    /// Western edge longitude
+    #[schema(example = 93.9500)]
+    pub min_lon: f64,
+    /// Eastern edge longitude
+    #[schema(example = 93.9583)]
+    pub max_lon: f64,
+}
+
+/// A single 1 km² population grid cell with its bounds for map rendering.
+#[derive(Serialize, ToSchema)]
+pub struct GridCell {
+    /// Centre latitude of the grid cell
+    #[schema(example = 20.4625)]
+    pub lat: f64,
+    /// Centre longitude of the grid cell
+    #[schema(example = 93.9542)]
+    pub lon: f64,
+    /// Estimated population within this cell
+    #[schema(example = 5.16)]
+    pub population: f32,
+    /// Geographic bounds of the cell (for rendering as a rectangle on a map)
+    pub bounds: CellBounds,
+}
+
+/// Population grid data within a radius, suitable for map visualisation.
+#[derive(Serialize, ToSchema)]
+pub struct PopulationGridPayload {
+    /// Centre coordinate of the query
+    pub coordinate: CoordinateInfo,
+    /// Search radius in kilometres
+    #[schema(example = 5.0)]
+    pub radius_km: f64,
+    /// Total population across all cells within the radius
+    #[schema(example = 1653.2)]
+    pub total_population: f64,
+    /// Number of non-empty grid cells returned
+    #[schema(example = 42)]
+    pub cell_count: usize,
+    /// Individual grid cells with population > 0
+    pub cells: Vec<GridCell>,
+}
+
 /// Reverse geocoding result — nearest named place to the queried coordinate.
 #[derive(Serialize, ToSchema)]
 #[schema(example = json!({
