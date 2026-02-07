@@ -9,9 +9,10 @@ Query any coordinate on Earth and get back population estimates, reverse geocodi
 ## Features
 
 - **Population lookup** — 1km resolution grid covering the entire globe (175M+ cells)
+- **Population grid** — retrieve all grid cells within a radius with bounds for map rendering
 - **Batch queries** — up to 1,000 coordinate lookups in a single request
 - **Reverse geocoding** — nearest populated place from 4.8M+ GeoNames entries
-- **Exposure analysis** — population within a radius for disaster risk assessment
+- **Exposure analysis** — population within a radius with directional info for each place
 - **Country lookup** — point-in-polygon and ISO code lookup with Natural Earth boundaries
 - **Swagger UI** — interactive API docs at `/api/v1/docs/`
 
@@ -81,7 +82,9 @@ All routes are prefixed with `/api/v1`. The prefix is defined once in `api/src/c
 
 ### `GET /api/v1/population`
 
-Population at a single coordinate (1km grid cell).
+Population at a single coordinate (1km grid cell). Optionally provide a `radius` (max 10 km) to get all non-empty grid cells within the circle, with bounds for map rendering.
+
+**Single cell (no radius):**
 
 ```bash
 curl "localhost:8080/api/v1/population?lat=51.5074&lon=-0.1278"
@@ -89,12 +92,56 @@ curl "localhost:8080/api/v1/population?lat=51.5074&lon=-0.1278"
 
 ```json
 {
-  "lat": 51.5074,
-  "lon": -0.1278,
-  "population": 5765.2,
-  "resolution_km": 1.0
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "lat": 51.5074,
+    "lon": -0.1278,
+    "population": 5765.2,
+    "resolution_km": 1.0
+  }
 }
 ```
+
+**Grid cells (with radius):**
+
+```bash
+curl "localhost:8080/api/v1/population?lat=51.5074&lon=-0.1278&radius=2"
+```
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "coordinate": { "lat": 51.5074, "lon": -0.1278 },
+    "radius_km": 2.0,
+    "total_population": 87432.5,
+    "cell_count": 18,
+    "cells": [
+      {
+        "lat": 51.50833,
+        "lon": -0.12917,
+        "population": 5765.2,
+        "bounds": {
+          "min_lat": 51.50417,
+          "max_lat": 51.5125,
+          "min_lon": -0.13333,
+          "max_lon": -0.125
+        }
+      }
+    ]
+  }
+}
+```
+
+Each cell includes centre coordinates and geographic `bounds` (min/max lat/lon) for rendering grid rectangles on a map. Only cells with `population > 0` are returned, sorted by population descending.
+
+| Parameter | Type    | Required | Description                              |
+| --------- | ------- | -------- | ---------------------------------------- |
+| `lat`     | float   | yes      | Latitude (-90 to 90)                     |
+| `lon`     | float   | yes      | Longitude (-180 to 180)                  |
+| `radius`  | float   | no       | Search radius in km (max 10). When omitted, returns a single cell. |
 
 ### `POST /api/v1/population/batch`
 
@@ -116,36 +163,71 @@ curl "localhost:8080/api/v1/reverse?lat=35.6762&lon=139.6503"
 
 ```json
 {
-  "place_id": 1850147,
-  "name": "Tokyo",
-  "display_name": "Tokyo, Tokyo, Japan",
-  "address": {
-    "city": "Tokyo",
-    "state": "Tokyo",
-    "country": "Japan",
-    "country_code": "jp"
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "place_id": 1850147,
+    "name": "Tokyo",
+    "display_name": "Tokyo, Tokyo, Japan",
+    "address": {
+      "city": "Tokyo",
+      "state": "Tokyo",
+      "country": "Japan",
+      "country_code": "jp"
+    }
   }
 }
 ```
 
 ### `GET /api/v1/exposure`
 
-Population exposure within a radius — useful for disaster risk assessment.
+Population exposure within a radius — useful for disaster risk assessment. Each place includes its compass `direction` and `bearing_deg` from the epicentre.
 
 ```bash
-curl "localhost:8080/api/v1/exposure?lat=40.7128&lon=-74.006&radius=10"
+curl "localhost:8080/api/v1/exposure?lat=20.4657&lon=93.9572&radius=10"
 ```
 
 ```json
 {
-  "coordinate": { "lat": 40.7128, "lon": -74.006 },
-  "radius_km": 10,
-  "total_population": 3847291.5,
-  "area_km2": 314.16,
-  "density_per_km2": 12245.5,
-  "places": [ ... ]
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "coordinate": { "lat": 20.4657, "lon": 93.9572 },
+    "radius_km": 10.0,
+    "total_population": 1653.2,
+    "area_km2": 314.16,
+    "density_per_km2": 5.3,
+    "cell_population": 5.16,
+    "cell_area_km2": 0.81,
+    "cell_density_per_km2": 6.4,
+    "places": [
+      {
+        "place_id": 1325189,
+        "name": "Hetsaw",
+        "display_name": "Hetsaw, Kyaunkpyu District, Rakhine, Myanmar",
+        "address": {
+          "city": "Hetsaw",
+          "district": "Kyaunkpyu District",
+          "state": "Rakhine",
+          "country": "Myanmar",
+          "country_code": "mm"
+        },
+        "distance_km": 4.69,
+        "direction": "SW",
+        "bearing_deg": 233.3
+      }
+    ]
+  }
 }
 ```
+
+| Parameter | Type  | Required | Default | Description                     |
+| --------- | ----- | -------- | ------- | ------------------------------- |
+| `lat`     | float | yes      | —       | Latitude (-90 to 90)            |
+| `lon`     | float | yes      | —       | Longitude (-180 to 180)         |
+| `radius`  | float | no       | 1       | Search radius in km (max 500)   |
+
+The `direction` field is an 8-point compass value (N, NE, E, SE, S, SW, W, NW) and `bearing_deg` is the precise azimuth (0° = North, 90° = East).
 
 ### `GET /api/v1/country`
 
@@ -165,7 +247,7 @@ curl "localhost:8080/api/v1/country/FRA"
 
 ### `GET /api/v1/countries`
 
-List countries by continent.
+List countries by continent. Valid values: `asia`, `europe`, `africa`, `oceania`, `americas`, `north-america`, `south-america`.
 
 ```bash
 curl "localhost:8080/api/v1/countries?continent=europe"
@@ -181,13 +263,14 @@ curl "localhost:8080/api/v1/health"
 
 ## Performance
 
-| Endpoint           | Typical Latency | Strategy                                     |
-| ------------------ | --------------- | -------------------------------------------- |
-| `/population`      | ~2ms            | B-tree lookup on `cell_id`                   |
-| `/reverse`         | ~5ms            | GiST index nearest-neighbor                  |
-| `/exposure` (10km) | ~20ms           | `generate_series` grid scan + GiST geography |
-| `/exposure` (50km) | ~100ms          | Same strategy, more cells                    |
-| `/country`         | ~10ms           | `ST_Contains` with GiST index                |
+| Endpoint              | Typical Latency | Strategy                                     |
+| --------------------- | --------------- | -------------------------------------------- |
+| `/population`         | ~2ms            | B-tree lookup on `cell_id`                   |
+| `/population?radius=` | ~10ms           | `generate_series` grid scan + filter         |
+| `/reverse`            | ~5ms            | GiST index nearest-neighbor                  |
+| `/exposure` (10km)    | ~20ms           | `generate_series` grid scan + GiST geography |
+| `/exposure` (50km)    | ~100ms          | Same strategy, more cells                    |
+| `/country`            | ~10ms           | `ST_Contains` with GiST index                |
 
 Key optimizations:
 
@@ -195,6 +278,7 @@ Key optimizations:
 - **Geography GiST index** — `ST_DWithin` on GeoNames uses a dedicated `(geom::geography)` index
 - **JIT disabled** — PostgreSQL JIT compilation adds ~700ms overhead on first query; disabled for consistent sub-50ms responses
 - **Connection pooling** — `deadpool-postgres` with `RecyclingMethod::Fast`
+- **Compiler optimizations** — release build with `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`
 
 ## Data Sources
 
@@ -211,7 +295,7 @@ geopop/
 ├── api/                    # Rust API server
 │   ├── src/
 │   │   ├── main.rs         # Server setup, connection pool
-│   │   ├── config.rs       # Environment configuration
+│   │   ├── config.rs       # Environment configuration & API_PREFIX
 │   │   ├── errors.rs       # Error types and response mapping
 │   │   ├── grid.rs         # Cell ID computation (30 arc-second grid)
 │   │   ├── response.rs     # Unified API response wrapper
