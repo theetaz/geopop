@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::{ExposedPlace, ReversePayload};
+use crate::models::{ExposedPlace, NearestPlace, ReversePayload};
 use deadpool_postgres::Object;
 use std::collections::HashMap;
 
@@ -29,6 +29,49 @@ impl GeocodingRepository {
             .ok_or_else(|| AppError::NotFound("No nearby place found".into()))?;
 
         Ok(Self::build_reverse_payload(&row))
+    }
+
+    /// Find the single nearest named place globally (KNN, no radius limit) with distance and direction.
+    pub async fn find_nearest_place(
+        client: &Object,
+        lat: f64,
+        lon: f64,
+    ) -> Result<NearestPlace, AppError> {
+        let sql = r#"
+            SELECT g.geonameid, g.name, g.latitude, g.longitude,
+                   g.feature_code, g.country_code, g.admin1_code, g.admin2_code,
+                   a1.name, a2.name, c.name,
+                   ST_Distance(g.geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0
+            FROM geonames g
+            LEFT JOIN admin1_codes a1 ON a1.code = g.country_code || '.' || g.admin1_code
+            LEFT JOIN admin2_codes a2 ON a2.code = g.country_code || '.' || g.admin1_code || '.' || g.admin2_code
+            LEFT JOIN countries c ON c.iso_a2 = g.country_code
+            ORDER BY g.geom <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)
+            LIMIT 1
+        "#;
+
+        let row = client
+            .query_opt(sql, &[&lon, &lat])
+            .await?
+            .ok_or_else(|| AppError::NotFound("No nearby place found".into()))?;
+
+        let name: String = row.get(1);
+        let place_lat: f64 = row.get(2);
+        let place_lon: f64 = row.get(3);
+        let fc = row.get::<_, Option<String>>(4).unwrap_or_default();
+        let cc = row.get::<_, Option<String>>(5).unwrap_or_default();
+        let (display_name, address) = Self::build_address(&row, &name, &fc, &cc);
+        let bearing = bearing_deg(lat, lon, place_lat, place_lon);
+
+        Ok(NearestPlace {
+            place_id: row.get(0),
+            name,
+            display_name,
+            address,
+            distance_km: round2(row.get::<_, f64>(11)),
+            direction: compass_direction(bearing),
+            bearing_deg: round1(bearing),
+        })
     }
 
     pub async fn get_exposed_places(
