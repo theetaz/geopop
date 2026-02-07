@@ -36,9 +36,3 @@ pub struct ContinentQuery {
     #[validate(custom(function = "crate::validation::validate_continent_field"))]
     pub continent: String,
 }
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct Iso3Path {
-    #[serde(rename = "iso3")]
-    pub value: String,
-}
