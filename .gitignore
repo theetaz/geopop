@@ -1,0 +1,35 @@
+# Data files
+data/
+*.tif
+*.tiff
+*.zip
+*.shp
+*.dbf
+*.prj
+*.shx
+
+# Environment
+.env
+
+# Rust
+api/target/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# Docker
+pgdata/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# temporary files
+temp/
