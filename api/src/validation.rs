@@ -3,6 +3,7 @@ use validator::ValidationError;
 
 pub(crate) const MAX_BATCH_SIZE: usize = 1000;
 pub(crate) const MAX_RADIUS_KM: f64 = 500.0;
+pub(crate) const MAX_POPULATION_RADIUS_KM: f64 = 10.0;
 pub(crate) const VALID_CONTINENTS: &[&str] = &[
     "asia", "europe", "africa", "oceania", "americas",
     "north-america", "south-america",
@@ -18,6 +19,13 @@ pub fn validate_lat(lat: f64) -> Result<(), ValidationError> {
 pub fn validate_lon(lon: f64) -> Result<(), ValidationError> {
     if !lon.is_finite() || lon < -180.0 || lon >= 180.0 {
         return Err(ValidationError::new("longitude"));
+    }
+    Ok(())
+}
+
+pub fn validate_population_radius(radius: f64) -> Result<(), ValidationError> {
+    if !radius.is_finite() || radius <= 0.0 || radius > MAX_POPULATION_RADIUS_KM {
+        return Err(ValidationError::new("radius"));
     }
     Ok(())
 }
