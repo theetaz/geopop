@@ -2,18 +2,13 @@ use crate::errors::AppError;
 use crate::grid;
 use deadpool_postgres::Object;
 
-pub struct PopulationRepository;
+pub(crate) struct PopulationRepository;
 
 impl PopulationRepository {
-    pub async fn get_population(
-        client: &Object,
-        lat: f64,
-        lon: f64,
-    ) -> Result<f32, AppError> {
-        let cell = grid::cell_id(lat, lon)
-            .ok_or_else(|| AppError::Validation(
-                "Coordinates out of range. lat: [-90, 90], lon: [-180, 180)".to_string(),
-            ))?;
+    pub async fn get_population(client: &Object, lat: f64, lon: f64) -> Result<f32, AppError> {
+        let cell = grid::cell_id(lat, lon).ok_or_else(|| {
+            AppError::Validation("Coordinates out of range. lat: [-90, 90], lon: [-180, 180)".into())
+        })?;
 
         let population = client
             .query_opt("SELECT pop FROM population WHERE cell_id = $1", &[&cell])
@@ -32,8 +27,8 @@ impl PopulationRepository {
             .await?;
 
         let mut results = Vec::with_capacity(points.len());
-        for (lat, lon) in points {
-            let population = match grid::cell_id(*lat, *lon) {
+        for &(lat, lon) in points {
+            let population = match grid::cell_id(lat, lon) {
                 Some(cell) => client
                     .query_opt(&stmt, &[&cell])
                     .await?
@@ -46,11 +41,7 @@ impl PopulationRepository {
         Ok(results)
     }
 
-    pub async fn get_cell_population(
-        client: &Object,
-        lat: f64,
-        lon: f64,
-    ) -> Result<f32, AppError> {
+    pub async fn get_cell_population(client: &Object, lat: f64, lon: f64) -> Result<f32, AppError> {
         match grid::cell_id(lat, lon) {
             Some(cell) => Ok(client
                 .query_opt("SELECT pop FROM population WHERE cell_id = $1", &[&cell])
