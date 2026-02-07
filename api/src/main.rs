@@ -32,6 +32,7 @@ use crate::config::API_PREFIX;
         routes::population::batch_population,
         routes::geocoding::reverse_geocode,
         routes::exposure::exposure,
+        routes::analyse::analyse,
         routes::country::country_lookup,
         routes::country::country_by_iso3,
         routes::country::countries_by_continent,
@@ -43,6 +44,7 @@ use crate::config::API_PREFIX;
         models::HealthPayload, models::ReversePayload,
         models::ExposureQuery, models::ExposurePayload,
         models::ExposedPlace, models::CoordinateInfo,
+        models::AnalysePayload, models::NearestPlace, models::PopulationSummary,
         models::CountryPayload, models::CountryDetailPayload,
         models::ContinentQuery, models::CountryListPayload,
     )),
@@ -106,6 +108,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/population/batch", web::post().to(routes::population::batch_population))
                     .route("/reverse", web::get().to(routes::geocoding::reverse_geocode))
                     .route("/exposure", web::get().to(routes::exposure::exposure))
+                    .route("/analyse", web::get().to(routes::analyse::analyse))
                     .route("/country", web::get().to(routes::country::country_lookup))
                     .route("/country/{iso3}", web::get().to(routes::country::country_by_iso3))
                     .route("/countries", web::get().to(routes::country::countries_by_continent))
