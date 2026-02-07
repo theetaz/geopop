@@ -1,7 +1,7 @@
-pub mod population;
-pub mod geocoding;
-pub mod country;
+pub(crate) mod country;
+pub(crate) mod geocoding;
+pub(crate) mod population;
 
-pub use population::PopulationRepository;
-pub use geocoding::GeocodingRepository;
-pub use country::CountryRepository;
+pub(crate) use country::CountryRepository;
+pub(crate) use geocoding::GeocodingRepository;
+pub(crate) use population::PopulationRepository;
