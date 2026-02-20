@@ -23,7 +23,7 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .filter(|&s| s > 0)
-                .unwrap_or(16),
+                .unwrap_or(32),
         }
     }
 }

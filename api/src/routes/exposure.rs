@@ -49,7 +49,8 @@ pub(crate) async fn exposure(
     })?;
 
     let client = pool.get().await.map_err(AppError::from)?;
-    let _ = client.execute("SET LOCAL jit = off", &[]).await;
+    client.execute("SET jit = off", &[]).await.ok();
+    client.execute("SET statement_timeout = '30s'", &[]).await.ok();
 
     let (lat, lon, radius_km) = (query.lat, query.lon, query.radius);
 

@@ -9,7 +9,7 @@ mod validation;
 
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
-use deadpool_postgres::{Config as PgConfig, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
+use deadpool_postgres::{Config as PgConfig, ManagerConfig, PoolConfig, RecyclingMethod, Runtime, Timeouts};
 use env_logger::Env;
 use native_tls::{Certificate, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
@@ -87,7 +87,13 @@ async fn main() -> std::io::Result<()> {
     if let Some(db) = pg_config.get_dbname() { pool_cfg.dbname = Some(db.into()); }
 
     pool_cfg.manager = Some(ManagerConfig { recycling_method: RecyclingMethod::Fast });
-    pool_cfg.pool = Some(PoolConfig::new(cfg.pool_size));
+    let mut pool_config = PoolConfig::new(cfg.pool_size);
+    pool_config.timeouts = Timeouts {
+        wait: Some(std::time::Duration::from_secs(5)),
+        create: Some(std::time::Duration::from_secs(5)),
+        recycle: Some(std::time::Duration::from_secs(5)),
+    };
+    pool_cfg.pool = Some(pool_config);
 
     let ssl_mode = DbSslMode::from_database_url(&cfg.database_url);
     let pool = if ssl_mode == DbSslMode::Disable {

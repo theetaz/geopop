@@ -3,9 +3,7 @@ use deadpool_postgres::Pool;
 use validator::Validate;
 
 use crate::errors::AppError;
-use crate::models::{
-    AnalysePayload, CoordinateInfo, NearestPlace, PointQuery, PopulationSummary,
-};
+use crate::models::{AnalysePayload, CoordinateInfo, PointQuery, PopulationSummary};
 use crate::repositories::{CountryRepository, GeocodingRepository, PopulationRepository};
 use crate::response::ApiResponse;
 
@@ -58,19 +56,34 @@ pub(crate) async fn analyse(
     })?;
 
     let (lat, lon) = (query.lat, query.lon);
+
+    // Run country, geocoding, and epicentre lookups concurrently on separate connections
+    let (country_res, place_res, epicentre_res) = tokio::join!(
+        async {
+            let c = pool.get().await.map_err(AppError::from)?;
+            configure_conn(&c).await;
+            CountryRepository::get_by_coordinate(&c, lat, lon).await
+        },
+        async {
+            let c = pool.get().await.map_err(AppError::from)?;
+            configure_conn(&c).await;
+            GeocodingRepository::find_nearest_place(&c, lat, lon).await
+        },
+        async {
+            let c = pool.get().await.map_err(AppError::from)?;
+            configure_conn(&c).await;
+            PopulationRepository::get_cell_population(&c, lat, lon).await
+        },
+    );
+
+    let country = country_res?;
+    let nearest_place = place_res?;
+    let epicentre_pop = epicentre_res.unwrap_or(0.0);
+
+    // Population radius search on its own connection
     let client = pool.get().await.map_err(AppError::from)?;
-    let _ = client.execute("SET LOCAL jit = off", &[]).await;
+    configure_conn(&client).await;
 
-    // Step 1: Country and nearest place (independent — could be concurrent but share the connection)
-    let country = CountryRepository::get_by_coordinate(&client, lat, lon).await?;
-    let nearest_place = GeocodingRepository::find_nearest_place(&client, lat, lon).await?;
-
-    // Step 2: Check epicentre cell population
-    let epicentre_pop = PopulationRepository::get_cell_population(&client, lat, lon)
-        .await
-        .unwrap_or(0.0);
-
-    // Step 3: Find population — expand radius if epicentre is empty
     let (search_radius, total_pop) = if epicentre_pop > 0.0 {
         let pop = PopulationRepository::get_exposure_population(&client, lat, lon, STEP_KM).await?;
         (STEP_KM, pop)
@@ -95,20 +108,47 @@ pub(crate) async fn analyse(
     }))
 }
 
-/// Expand radius in STEP_KM increments until population > 0 or MAX_RADIUS_KM is reached.
+async fn configure_conn(client: &deadpool_postgres::Object) {
+    client.execute("SET jit = off", &[]).await.ok();
+    client.execute("SET statement_timeout = '30s'", &[]).await.ok();
+}
+
+/// Exponential probe + binary search to find nearest populated radius.
+/// Worst case ~13 queries instead of 200 with the old linear scan.
 async fn find_population_radius(
     client: &deadpool_postgres::Object,
     lat: f64,
     lon: f64,
 ) -> Result<(f64, f64), AppError> {
-    let mut radius = STEP_KM;
-    while radius <= MAX_RADIUS_KM {
-        let pop = PopulationRepository::get_exposure_population(client, lat, lon, radius).await?;
+    // Phase 1: exponential probe to find a bracket [lo, hi] where population appears
+    let mut lo = 0.0_f64;
+    let mut hi = STEP_KM;
+    while hi <= MAX_RADIUS_KM {
+        let pop = PopulationRepository::get_exposure_population(client, lat, lon, hi).await?;
         if pop > 0.0 {
-            return Ok((radius, pop));
+            break;
         }
-        radius += STEP_KM;
+        lo = hi;
+        hi = (hi * 2.0).min(MAX_RADIUS_KM);
+        if lo >= MAX_RADIUS_KM {
+            return Ok((MAX_RADIUS_KM, 0.0));
+        }
     }
-    // No population found even at max radius
-    Ok((MAX_RADIUS_KM, 0.0))
+
+    // Phase 2: binary search within [lo, hi] to narrow down to STEP_KM precision
+    while hi - lo > STEP_KM {
+        let mid = ((lo + hi) / 2.0 / STEP_KM).round() * STEP_KM;
+        if mid <= lo || mid >= hi {
+            break;
+        }
+        let pop = PopulationRepository::get_exposure_population(client, lat, lon, mid).await?;
+        if pop > 0.0 {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+
+    let pop = PopulationRepository::get_exposure_population(client, lat, lon, hi).await?;
+    Ok((hi, pop))
 }
