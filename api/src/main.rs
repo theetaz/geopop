@@ -8,8 +8,11 @@ mod routes;
 mod validation;
 
 use actix_cors::Cors;
-use actix_web::{web, App, HttpServer};
+use actix_web::{middleware::Logger, web, App, HttpServer};
 use deadpool_postgres::{Config as PgConfig, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
+use env_logger::Env;
+use native_tls::TlsConnector;
+use postgres_native_tls::MakeTlsConnector;
 use tokio_postgres::NoTls;
 use utoipa::openapi::Server;
 use utoipa::OpenApi;
@@ -60,7 +63,9 @@ struct ApiDoc;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format_timestamp_secs()
+        .init();
     let cfg = config::Config::from_env();
 
     let pg_config: tokio_postgres::Config = cfg.database_url
@@ -83,8 +88,21 @@ async fn main() -> std::io::Result<()> {
     pool_cfg.manager = Some(ManagerConfig { recycling_method: RecyclingMethod::Fast });
     pool_cfg.pool = Some(PoolConfig::new(cfg.pool_size));
 
-    let pool = pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)
-        .expect("failed to create connection pool");
+    let pool = if should_use_tls(&cfg.database_url) {
+        let native_tls = TlsConnector::builder()
+            .build()
+            .expect("failed to initialize TLS connector");
+        let tls = MakeTlsConnector::new(native_tls);
+        log::info!("Database TLS mode: enabled");
+        pool_cfg
+            .create_pool(Some(Runtime::Tokio1), tls)
+            .expect("failed to create TLS database connection pool")
+    } else {
+        log::warn!("Database TLS mode: disabled");
+        pool_cfg
+            .create_pool(Some(Runtime::Tokio1), NoTls)
+            .expect("failed to create database connection pool")
+    };
 
     let bind = format!("{}:{}", cfg.host, cfg.port);
     log::info!("Starting GeoPop API on {bind}");
@@ -98,6 +116,10 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(
+                Logger::new(r#"%a "%r" %s %b %Dms "%{User-Agent}i""#)
+                    .exclude("/api/v1/health"),
+            )
             .wrap(Cors::permissive())
             .app_data(web::Data::new(pool.clone()))
             .service(SwaggerUi::new(docs_path).url(openapi_url, openapi.clone()))
@@ -117,4 +139,23 @@ async fn main() -> std::io::Result<()> {
     .bind(&bind)?
     .run()
     .await
+}
+
+fn should_use_tls(database_url: &str) -> bool {
+    let Some((_, query)) = database_url.split_once('?') else {
+        return false;
+    };
+
+    query
+        .split('&')
+        .find_map(|param| {
+            let (key, value) = param.split_once('=')?;
+            if key.eq_ignore_ascii_case("sslmode") {
+                Some(value.to_ascii_lowercase())
+            } else {
+                None
+            }
+        })
+        .map(|mode| matches!(mode.as_str(), "require" | "verify-ca" | "verify-full"))
+        .unwrap_or(false)
 }
