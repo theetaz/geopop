@@ -11,8 +11,9 @@ use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use deadpool_postgres::{Config as PgConfig, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
 use env_logger::Env;
-use native_tls::TlsConnector;
+use native_tls::{Certificate, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
+use std::{env, fs};
 use tokio_postgres::NoTls;
 use utoipa::openapi::Server;
 use utoipa::OpenApi;
@@ -88,20 +89,29 @@ async fn main() -> std::io::Result<()> {
     pool_cfg.manager = Some(ManagerConfig { recycling_method: RecyclingMethod::Fast });
     pool_cfg.pool = Some(PoolConfig::new(cfg.pool_size));
 
-    let pool = if should_use_tls(&cfg.database_url) {
-        let native_tls = TlsConnector::builder()
-            .build()
-            .expect("failed to initialize TLS connector");
-        let tls = MakeTlsConnector::new(native_tls);
-        log::info!("Database TLS mode: enabled");
-        pool_cfg
-            .create_pool(Some(Runtime::Tokio1), tls)
-            .expect("failed to create TLS database connection pool")
-    } else {
-        log::warn!("Database TLS mode: disabled");
+    let ssl_mode = DbSslMode::from_database_url(&cfg.database_url);
+    let pool = if ssl_mode == DbSslMode::Disable {
+        log::warn!("Database TLS mode: disabled (sslmode=disable)");
         pool_cfg
             .create_pool(Some(Runtime::Tokio1), NoTls)
             .expect("failed to create database connection pool")
+    } else {
+        let mut tls_builder = TlsConnector::builder();
+        if matches!(ssl_mode, DbSslMode::Require | DbSslMode::Prefer) {
+            // Match libpq `sslmode=require`: encrypt traffic but skip cert/hostname checks.
+            tls_builder.danger_accept_invalid_certs(true);
+            tls_builder.danger_accept_invalid_hostnames(true);
+        }
+        add_ssl_root_cert_if_present(&cfg.database_url, &mut tls_builder);
+
+        let native_tls = tls_builder
+            .build()
+            .expect("failed to initialize TLS connector");
+        let tls = MakeTlsConnector::new(native_tls);
+        log::info!("Database TLS mode: {}", ssl_mode.as_str());
+        pool_cfg
+            .create_pool(Some(Runtime::Tokio1), tls)
+            .expect("failed to create TLS database connection pool")
     };
 
     let bind = format!("{}:{}", cfg.host, cfg.port);
@@ -141,21 +151,75 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
-fn should_use_tls(database_url: &str) -> bool {
-    let Some((_, query)) = database_url.split_once('?') else {
-        return false;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DbSslMode {
+    Disable,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+impl DbSslMode {
+    fn from_database_url(database_url: &str) -> Self {
+        match extract_query_param(database_url, "sslmode")
+            .as_deref()
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("disable") => Self::Disable,
+            Some("verify-ca") => Self::VerifyCa,
+            Some("verify-full") => Self::VerifyFull,
+            Some("require") => Self::Require,
+            Some("prefer") => Self::Prefer,
+            _ => Self::Disable,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Disable => "disabled",
+            Self::Prefer => "prefer (TLS with non-strict verification)",
+            Self::Require => "require (TLS with non-strict verification)",
+            Self::VerifyCa => "verify-ca",
+            Self::VerifyFull => "verify-full",
+        }
+    }
+}
+
+fn extract_query_param(database_url: &str, key: &str) -> Option<String> {
+    let (_, query) = database_url.split_once('?')?;
+    query.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        if name.eq_ignore_ascii_case(key) {
+            Some(value.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+fn add_ssl_root_cert_if_present(database_url: &str, tls_builder: &mut native_tls::TlsConnectorBuilder) {
+    let cert_path = extract_query_param(database_url, "sslrootcert")
+        .or_else(|| env::var("PGSSLROOTCERT").ok())
+        .or_else(|| env::var("DATABASE_SSL_ROOT_CERT").ok());
+
+    let Some(cert_path) = cert_path else {
+        return;
     };
 
-    query
-        .split('&')
-        .find_map(|param| {
-            let (key, value) = param.split_once('=')?;
-            if key.eq_ignore_ascii_case("sslmode") {
-                Some(value.to_ascii_lowercase())
-            } else {
-                None
+    match fs::read(&cert_path) {
+        Ok(cert_bytes) => match Certificate::from_pem(&cert_bytes) {
+            Ok(cert) => {
+                tls_builder.add_root_certificate(cert);
+                log::info!("Loaded database root certificate from {cert_path}");
             }
-        })
-        .map(|mode| matches!(mode.as_str(), "require" | "verify-ca" | "verify-full"))
-        .unwrap_or(false)
+            Err(err) => {
+                log::warn!("Failed to parse database root certificate at {cert_path}: {err}");
+            }
+        },
+        Err(err) => {
+            log::warn!("Failed to read database root certificate at {cert_path}: {err}");
+        }
+    }
 }
