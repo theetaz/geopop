@@ -113,42 +113,21 @@ async fn configure_conn(client: &deadpool_postgres::Object) {
     client.execute("SET statement_timeout = '30s'", &[]).await.ok();
 }
 
-/// Exponential probe + binary search to find nearest populated radius.
-/// Worst case ~13 queries instead of 200 with the old linear scan.
+/// Tiered existence check: probe expanding tiers until population is found,
+/// then compute exposure at that tier. Each empty-ocean tier costs a single
+/// fast EXISTS query. Worst case (deep ocean): 9 existence checks + 1 sum.
 async fn find_population_radius(
     client: &deadpool_postgres::Object,
     lat: f64,
     lon: f64,
 ) -> Result<(f64, f64), AppError> {
-    // Phase 1: exponential probe to find a bracket [lo, hi] where population appears
-    let mut lo = 0.0_f64;
-    let mut hi = STEP_KM;
-    while hi <= MAX_RADIUS_KM {
-        let pop = PopulationRepository::get_exposure_population(client, lat, lon, hi).await?;
-        if pop > 0.0 {
-            break;
-        }
-        lo = hi;
-        hi = (hi * 2.0).min(MAX_RADIUS_KM);
-        if lo >= MAX_RADIUS_KM {
-            return Ok((MAX_RADIUS_KM, 0.0));
+    const TIERS: [f64; 9] = [5.0, 10.0, 25.0, 50.0, 100.0, 200.0, 400.0, 700.0, MAX_RADIUS_KM];
+    for &tier_km in &TIERS {
+        if PopulationRepository::has_population_within(client, lat, lon, tier_km).await? {
+            let pop =
+                PopulationRepository::get_exposure_population(client, lat, lon, tier_km).await?;
+            return Ok((tier_km, pop));
         }
     }
-
-    // Phase 2: binary search within [lo, hi] to narrow down to STEP_KM precision
-    while hi - lo > STEP_KM {
-        let mid = ((lo + hi) / 2.0 / STEP_KM).round() * STEP_KM;
-        if mid <= lo || mid >= hi {
-            break;
-        }
-        let pop = PopulationRepository::get_exposure_population(client, lat, lon, mid).await?;
-        if pop > 0.0 {
-            hi = mid;
-        } else {
-            lo = mid;
-        }
-    }
-
-    let pop = PopulationRepository::get_exposure_population(client, lat, lon, hi).await?;
-    Ok((hi, pop))
+    Ok((MAX_RADIUS_KM, 0.0))
 }
