@@ -3,6 +3,21 @@ use crate::grid;
 use crate::models::{CellBounds, GridCell};
 use deadpool_postgres::Object;
 
+const KM_PER_DEG: f64 = 111.32;
+const ROW_MAX: i32 = 21599;
+
+fn search_bounds(lat: f64, lon: f64, radius_km: f64) -> (i32, i32, i32, i32) {
+    let dlat = radius_km / KM_PER_DEG;
+    let cos_lat = lat.to_radians().cos().max(0.01);
+    let dlon = radius_km / (KM_PER_DEG * cos_lat);
+    (
+        (((90.0 - (lat + dlat)) * 120.0).floor() as i32).clamp(0, ROW_MAX),
+        (((90.0 - (lat - dlat)) * 120.0).floor() as i32).clamp(0, ROW_MAX),
+        ((lon - dlon + 180.0) * 120.0).floor() as i32,
+        ((lon + dlon + 180.0) * 120.0).floor() as i32,
+    )
+}
+
 pub(crate) struct PopulationRepository;
 
 impl PopulationRepository {
@@ -110,33 +125,76 @@ impl PopulationRepository {
             .collect())
     }
 
+    /// Sum population within a circular radius.
+    /// LATERAL forces PostgreSQL into nested loop + index scan on every row,
+    /// preventing the planner from choosing a catastrophic hash join on 175M rows.
     pub async fn get_exposure_population(
         client: &Object,
         lat: f64,
         lon: f64,
         radius_km: f64,
     ) -> Result<f64, AppError> {
+        let (min_row, max_row, min_col, max_col) = search_bounds(lat, lon, radius_km);
         let sql = r#"
-            SELECT COALESCE(SUM(pop), 0)::float8
-            FROM (
-                SELECT p.pop
-                FROM generate_series(
-                    GREATEST(FLOOR((90.0 - ($1::float8 + $3::float8/111.32)) * 120.0)::int, 0),
-                    LEAST(FLOOR((90.0 - ($1::float8 - $3::float8/111.32)) * 120.0)::int, 21599)
-                ) r,
-                generate_series(
-                    FLOOR(($2::float8 - $3::float8/(111.32 * cos(radians($1::float8))) + 180.0) * 120.0)::int,
-                    FLOOR(($2::float8 + $3::float8/(111.32 * cos(radians($1::float8))) + 180.0) * 120.0)::int
-                ) c,
-                population p
-                WHERE p.cell_id = r.r * 43200 + c.c
-                AND 111.32 * sqrt(
-                    pow((90.0 - (r.r + 0.5) / 120.0) - $1::float8, 2) +
-                    pow((((c.c + 0.5) / 120.0 - 180.0) - $2::float8) * cos(radians($1::float8)), 2)
-                ) <= $3::float8
+            SELECT COALESCE(SUM(sub.pop), 0)::float8
+            FROM generate_series($4::int, $5::int) AS r(r)
+            CROSS JOIN LATERAL (
+                SELECT p.pop, p.cell_id
+                FROM population p
+                WHERE p.cell_id BETWEEN r.r * 43200 + $6::int AND r.r * 43200 + $7::int
             ) sub
+            WHERE 111.32 * sqrt(
+                pow((90.0 - (sub.cell_id / 43200 + 0.5) / 120.0) - $1::float8, 2) +
+                pow(((mod(sub.cell_id, 43200) + 0.5) / 120.0 - 180.0 - $2::float8) * cos(radians($1::float8)), 2)
+            ) <= $3::float8
         "#;
-        Ok(client.query_one(sql, &[&lat, &lon, &radius_km]).await?.get(0))
+        set_seqscan_off(client).await?;
+        let query_result = client
+            .query_one(sql, &[&lat, &lon, &radius_km, &min_row, &max_row, &min_col, &max_col])
+            .await;
+        reset_seqscan(client).await;
+        Ok(query_result?.get(0))
+    }
+
+    /// Fast existence check: is there ANY populated cell within the bounding box?
+    /// LATERAL + LIMIT 1 stops at the very first populated cell found — empty
+    /// ocean rows cost a single B-tree probe that returns nothing.
+    pub async fn has_population_within(
+        client: &Object,
+        lat: f64,
+        lon: f64,
+        search_km: f64,
+    ) -> Result<bool, AppError> {
+        let (min_row, max_row, min_col, max_col) = search_bounds(lat, lon, search_km);
+        let sql = r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM generate_series($1::int, $2::int) AS r(r)
+                CROSS JOIN LATERAL (
+                    SELECT 1 FROM population p
+                    WHERE p.cell_id BETWEEN r.r * 43200 + $3::int AND r.r * 43200 + $4::int
+                    AND p.pop > 0
+                    LIMIT 1
+                ) sub
+            )
+        "#;
+        set_seqscan_off(client).await?;
+        let query_result = client
+            .query_one(sql, &[&min_row, &max_row, &min_col, &max_col])
+            .await;
+        reset_seqscan(client).await;
+        Ok(query_result?.get(0))
+    }
+}
+
+async fn set_seqscan_off(client: &Object) -> Result<(), AppError> {
+    client.execute("SET enable_seqscan = off", &[]).await?;
+    Ok(())
+}
+
+async fn reset_seqscan(client: &Object) {
+    if let Err(err) = client.execute("SET enable_seqscan = on", &[]).await {
+        log::warn!("failed to reset enable_seqscan session parameter: {err}");
     }
 }
 
