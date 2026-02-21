@@ -43,7 +43,17 @@ impl ResponseError for AppError {
 
 impl From<tokio_postgres::Error> for AppError {
     fn from(err: tokio_postgres::Error) -> Self {
-        Self::Database(err.to_string())
+        let msg = if let Some(db_err) = err.as_db_error() {
+            format!(
+                "{}: {} (code: {})",
+                db_err.severity(),
+                db_err.message(),
+                db_err.code().code()
+            )
+        } else {
+            err.to_string()
+        };
+        Self::Database(msg)
     }
 }
 
