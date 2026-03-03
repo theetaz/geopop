@@ -5,11 +5,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && r
 COPY src/ src/
 RUN touch src/main.rs && cargo build --release
 
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=builder /app/target/release/geopop-api /usr/local/bin/geopop-api
 EXPOSE 8080
-HEALTHCHECK --interval=10s --timeout=3s CMD curl -f http://localhost:8080/api/v1/health || exit 1
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 CMD ["geopop-api"]
