@@ -68,7 +68,8 @@ api-build: ## Build the API binary locally
 	cd api && cargo build --release
 
 test: ## Run smoke tests against the running API
-	@echo "=== Health ===" && curl -sf $(API_URL)/health | python3 -m json.tool
+	@echo "=== Root ===" && curl -sf http://localhost:$(API_PORT)/ | python3 -m json.tool
+	@echo "\n=== Health ===" && curl -sf $(API_URL)/health | python3 -m json.tool
 	@echo "\n=== Population (London) ===" && curl -sf "$(API_URL)/population?lat=51.5074&lon=-0.1278" | python3 -m json.tool
 	@echo "\n=== Reverse (Tokyo) ===" && curl -sf "$(API_URL)/reverse?lat=35.6762&lon=139.6503" | python3 -m json.tool
 	@echo "\n=== Exposure (NYC 10km) ===" && curl -sf "$(API_URL)/exposure?lat=40.7128&lon=-74.006&radius=10" | python3 -m json.tool
