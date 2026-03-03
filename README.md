@@ -69,6 +69,19 @@ make ingest-all
 make up
 ```
 
+### Or use pre-built data
+
+Skip the 30–45 min ingestion by using the [geopop-data](https://github.com/theetaz/geopop-data) release:
+
+```bash
+git clone https://github.com/theetaz/geopop-data.git
+cd geopop-data
+export DATABASE_URL="postgres://geopop:geopop@localhost:5432/geopop"
+./ingest.sh
+```
+
+Requires `psql`, `pg_restore`, `curl`. Data: ~175M population cells, 258 countries, ~5.2M GeoNames places (~1.1 GB download).
+
 ### 3. Verify
 
 ```bash
