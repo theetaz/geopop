@@ -337,3 +337,29 @@ pub struct AnalysePayload {
     /// Population summary from auto-expanding radius search
     pub population: PopulationSummary,
 }
+
+/// Root endpoint payload: health, docs link, and database stats.
+#[derive(Serialize, ToSchema)]
+pub struct RootPayload {
+    #[schema(example = "ok")]
+    pub status: String,
+    #[schema(example = "/api/v1/docs/")]
+    pub docs_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<DatabaseStatsPayload>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct DatabaseStatsPayload {
+    pub countries: i64,
+    pub population_cells: i64,
+    pub total_population: f64,
+    pub geonames_places: i64,
+    pub tables: Vec<TableSizePayload>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TableSizePayload {
+    pub name: String,
+    pub size_bytes: i64,
+}
