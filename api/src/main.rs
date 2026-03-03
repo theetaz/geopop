@@ -31,6 +31,7 @@ use crate::config::API_PREFIX;
         version = "1.0.0"
     ),
     paths(
+        routes::root::root,
         routes::health::health,
         routes::population::get_population,
         routes::population::batch_population,
@@ -42,6 +43,7 @@ use crate::config::API_PREFIX;
         routes::country::countries_by_continent,
     ),
     components(schemas(
+        models::RootPayload, models::DatabaseStatsPayload, models::TableSizePayload,
         models::PointQuery, models::PopulationQuery, models::PointPayload,
         models::BatchQuery, models::BatchPayload,
         models::PopulationGridPayload, models::GridCell, models::CellBounds,
@@ -125,7 +127,7 @@ async fn main() -> std::io::Result<()> {
     log::info!("Swagger UI: http://{bind}{API_PREFIX}/docs/");
 
     let mut openapi = ApiDoc::openapi();
-    openapi.servers = Some(vec![Server::new(API_PREFIX)]);
+    openapi.servers = Some(vec![Server::new("/"), Server::new(API_PREFIX)]);
 
     let openapi_url: &'static str = Box::leak(format!("{API_PREFIX}/openapi.json").into_boxed_str());
     let docs_path: &'static str = Box::leak(format!("{API_PREFIX}/docs/{{_:.*}}").into_boxed_str());
@@ -138,6 +140,7 @@ async fn main() -> std::io::Result<()> {
             )
             .wrap(Cors::permissive())
             .app_data(web::Data::new(pool.clone()))
+            .route("/", web::get().to(routes::root::root))
             .service(SwaggerUi::new(docs_path).url(openapi_url, openapi.clone()))
             .service(
                 web::scope(API_PREFIX)
