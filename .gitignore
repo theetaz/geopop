@@ -39,3 +39,6 @@ pgdata/
 # temporary files
 temp/
 
+# Local scripts (not committed)
+scripts/
+
