@@ -4,7 +4,7 @@ use validator::Validate;
 
 use crate::errors::AppError;
 use crate::models::{
-    BatchPayload, BatchQuery, CoordinateInfo, PointPayload, PointQuery,
+    BatchPayload, BatchQuery, CoordinateInfo, PointPayload,
     PopulationGridPayload, PopulationQuery,
 };
 use crate::repositories::PopulationRepository;
