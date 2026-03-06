@@ -2,43 +2,35 @@ use actix_web::{web, HttpResponse, Result as ActixResult};
 use deadpool_postgres::Pool;
 
 use crate::config::API_PREFIX;
-use crate::models::{DatabaseStatsPayload, RootPayload, TableSizePayload};
+use crate::models::{RootPayload, TableRowCount};
 use crate::repositories::StatsRepository;
 use crate::response::ApiResponse;
 
-/// Root endpoint: health status, Swagger docs link, and database statistics.
+/// Root endpoint: health status, Swagger docs link, and estimated table row counts.
 #[utoipa::path(
     get,
     path = "/",
     tag = "System",
     summary = "Root / landing",
-    description = "Returns health status, link to Swagger docs, and database statistics (counts, table sizes).",
+    description = "Returns health status, link to Swagger docs, and estimated row counts per table.",
     responses(
-        (status = 200, description = "Service info with optional database stats", body = RootPayload)
+        (status = 200, description = "Service info with table row counts", body = RootPayload)
     )
 )]
 pub(crate) async fn root(pool: web::Data<Pool>) -> ActixResult<HttpResponse> {
-    let status = "ok".to_string();
-    let docs_url = format!("{API_PREFIX}/docs/");
-
-    let database = match pool.get().await {
+    let tables = match pool.get().await {
         Ok(client) => match StatsRepository::get_stats(&client).await {
-            Ok(stats) => Some(DatabaseStatsPayload {
-                countries: stats.countries,
-                population_cells: stats.population_cells,
-                total_population: stats.total_population,
-                geonames_places: stats.geonames_places,
-                tables: stats
-                    .tables
+            Ok(stats) => Some(
+                stats
                     .into_iter()
-                    .map(|t| TableSizePayload {
+                    .map(|t| TableRowCount {
                         name: t.name,
-                        size_bytes: t.size_bytes,
+                        estimated_rows: t.estimated_rows,
                     })
                     .collect(),
-            }),
+            ),
             Err(e) => {
-                log::warn!("Failed to fetch database stats: {e}");
+                log::warn!("Failed to fetch table stats: {e}");
                 None
             }
         },
@@ -49,8 +41,8 @@ pub(crate) async fn root(pool: web::Data<Pool>) -> ActixResult<HttpResponse> {
     };
 
     Ok(ApiResponse::ok(RootPayload {
-        status,
-        docs_url,
-        database,
+        status: "ok".into(),
+        docs_url: format!("{API_PREFIX}/docs/"),
+        tables,
     }))
 }

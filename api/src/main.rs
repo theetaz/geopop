@@ -43,7 +43,7 @@ use crate::config::API_PREFIX;
         routes::country::countries_by_continent,
     ),
     components(schemas(
-        models::RootPayload, models::DatabaseStatsPayload, models::TableSizePayload,
+        models::RootPayload, models::TableRowCount,
         models::PointQuery, models::PopulationQuery, models::PointPayload,
         models::BatchQuery, models::BatchPayload,
         models::PopulationGridPayload, models::GridCell, models::CellBounds,

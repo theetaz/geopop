@@ -346,20 +346,11 @@ pub struct RootPayload {
     #[schema(example = "/api/v1/docs/")]
     pub docs_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub database: Option<DatabaseStatsPayload>,
+    pub tables: Option<Vec<TableRowCount>>,
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct DatabaseStatsPayload {
-    pub countries: i64,
-    pub population_cells: i64,
-    pub total_population: f64,
-    pub geonames_places: i64,
-    pub tables: Vec<TableSizePayload>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct TableSizePayload {
+pub struct TableRowCount {
     pub name: String,
-    pub size_bytes: i64,
+    pub estimated_rows: i64,
 }
