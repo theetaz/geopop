@@ -14,7 +14,7 @@ impl Config {
         Self {
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "postgres://geopop:geopop@localhost:5432/geopop".into()),
-            host: env::var("API_HOST").unwrap_or_else(|_| "127.0.0.1".into()),
+            host: env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("API_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
