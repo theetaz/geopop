@@ -12,9 +12,12 @@ Query any coordinate on Earth and get back population estimates, reverse geocodi
 - **Population grid** — retrieve all grid cells within a radius with bounds for map rendering
 - **Batch queries** — up to 1,000 coordinate lookups in a single request
 - **Reverse geocoding** — nearest populated place from 4.8M+ GeoNames entries
-- **Exposure analysis** — population within a radius with directional info for each place
-- **Disaster impact analysis** — auto-expanding radius search for remote/ocean epicentres
+- **Exposure analysis** — population within a radius, with paginated place listings
+- **Disaster impact analysis** — auto-expanding radius search with land/sea detection
+- **Nearby countries & cities** — radius-based search with cross-border detection and pagination
+- **Land/sea detection** — determine if a coordinate is on land or at sea
 - **Country lookup** — point-in-polygon and ISO code lookup with Natural Earth boundaries
+- **Multi-platform Docker** — native arm64 + amd64 images, no emulation warnings
 - **Swagger UI** — interactive API docs at `/api/v1/docs/`
 
 ## Architecture
@@ -151,11 +154,11 @@ curl "localhost:8080/api/v1/population?lat=51.5074&lon=-0.1278&radius=2"
 
 Each cell includes centre coordinates and geographic `bounds` (min/max lat/lon) for rendering grid rectangles on a map. Only cells with `population > 0` are returned, sorted by population descending.
 
-| Parameter | Type    | Required | Description                              |
-| --------- | ------- | -------- | ---------------------------------------- |
-| `lat`     | float   | yes      | Latitude (-90 to 90)                     |
-| `lon`     | float   | yes      | Longitude (-180 to 180)                  |
-| `radius`  | float   | no       | Search radius in km (max 10). When omitted, returns a single cell. |
+| Parameter | Type  | Required | Description                                                        |
+| --------- | ----- | -------- | ------------------------------------------------------------------ |
+| `lat`     | float | yes      | Latitude (-90 to 90)                                               |
+| `lon`     | float | yes      | Longitude (-180 to 180)                                            |
+| `radius`  | float | no       | Search radius in km (max 10). When omitted, returns a single cell. |
 
 ### `POST /api/v1/population/batch`
 
@@ -195,10 +198,10 @@ curl "localhost:8080/api/v1/reverse?lat=35.6762&lon=139.6503"
 
 ### `GET /api/v1/exposure`
 
-Population exposure within a radius — useful for disaster risk assessment. Each place includes its compass `direction` and `bearing_deg` from the epicentre.
+Population exposure within a radius — useful for disaster risk assessment. Returns population metrics and a `place_count` indicating how many named places exist within the area. Use `/exposure/places` for the full paginated list.
 
 ```bash
-curl "localhost:8080/api/v1/exposure?lat=20.4657&lon=93.9572&radius=10"
+curl "localhost:8080/api/v1/exposure?lat=6.9271&lon=79.8612&radius=10"
 ```
 
 ```json
@@ -206,46 +209,75 @@ curl "localhost:8080/api/v1/exposure?lat=20.4657&lon=93.9572&radius=10"
   "code": 200,
   "message": "success",
   "payload": {
-    "coordinate": { "lat": 20.4657, "lon": 93.9572 },
+    "coordinate": { "lat": 6.9271, "lon": 79.8612 },
     "radius_km": 10.0,
-    "total_population": 1653.2,
+    "total_population": 1386847.4,
     "area_km2": 314.16,
-    "density_per_km2": 5.3,
-    "cell_population": 5.16,
-    "cell_area_km2": 0.81,
-    "cell_density_per_km2": 6.4,
+    "density_per_km2": 4414.5,
+    "cell_population": 19910.0,
+    "cell_area_km2": 0.85,
+    "cell_density_per_km2": 23306.1,
+    "place_count": 158
+  }
+}
+```
+
+| Parameter | Type  | Required | Default | Description                   |
+| --------- | ----- | -------- | ------- | ----------------------------- |
+| `lat`     | float | yes      | —       | Latitude (-90 to 90)          |
+| `lon`     | float | yes      | —       | Longitude (-180 to 180)       |
+| `radius`  | float | no       | 1       | Search radius in km (max 500) |
+
+### `GET /api/v1/exposure/places`
+
+Paginated list of named places within the exposure radius, ordered by distance. Each place includes compass `direction` and `bearing_deg` from the centre.
+
+```bash
+curl "localhost:8080/api/v1/exposure/places?lat=6.9271&lon=79.8612&radius=10&page=1&per_page=3"
+```
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "coordinate": { "lat": 6.9271, "lon": 79.8612 },
+    "radius_km": 10.0,
+    "total_places": 158,
+    "page": 1,
+    "per_page": 3,
     "places": [
       {
-        "place_id": 1325189,
-        "name": "Hetsaw",
-        "display_name": "Hetsaw, Kyaunkpyu District, Rakhine, Myanmar",
+        "place_id": 1236097,
+        "name": "Maradana",
+        "display_name": "Maradana, Colombo District, Western Province, Sri Lanka",
         "address": {
-          "city": "Hetsaw",
-          "district": "Kyaunkpyu District",
-          "state": "Rakhine",
-          "country": "Myanmar",
-          "country_code": "mm"
+          "village": "Maradana",
+          "district": "Colombo District",
+          "state": "Western Province",
+          "country": "Sri Lanka",
+          "country_code": "lk"
         },
-        "distance_km": 4.69,
-        "direction": "SW",
-        "bearing_deg": 233.3
+        "distance_km": 0.59,
+        "direction": "E",
+        "bearing_deg": 90.0
       }
     ]
   }
 }
 ```
 
-| Parameter | Type  | Required | Default | Description                     |
-| --------- | ----- | -------- | ------- | ------------------------------- |
-| `lat`     | float | yes      | —       | Latitude (-90 to 90)            |
-| `lon`     | float | yes      | —       | Longitude (-180 to 180)         |
-| `radius`  | float | no       | 1       | Search radius in km (max 500)   |
-
-The `direction` field is an 8-point compass value (N, NE, E, SE, S, SW, W, NW) and `bearing_deg` is the precise azimuth (0° = North, 90° = East).
+| Parameter  | Type  | Required | Default | Description                   |
+| ---------- | ----- | -------- | ------- | ----------------------------- |
+| `lat`      | float | yes      | —       | Latitude (-90 to 90)          |
+| `lon`      | float | yes      | —       | Longitude (-180 to 180)       |
+| `radius`   | float | no       | 1       | Search radius in km (max 500) |
+| `page`     | int   | no       | 1       | Page number (1-indexed)       |
+| `per_page` | int   | no       | 20      | Results per page (max 100)    |
 
 ### `GET /api/v1/analyse`
 
-Disaster impact analysis with auto-expanding radius. Takes only a coordinate — no radius needed. The endpoint automatically identifies the country, finds the nearest named place, and expands the search radius in 5 km increments (up to 1000 km) until population is found.
+Disaster impact analysis with auto-expanding radius. Takes only a coordinate — no radius needed. The endpoint automatically detects if the point is on land or at sea, identifies the country, finds the nearest named place, and expands the search radius in 5 km increments (up to 1000 km) until population is found.
 
 Ideal for disaster events where the epicentre may be in ocean, desert, or uninhabited terrain.
 
@@ -259,17 +291,26 @@ curl "localhost:8080/api/v1/analyse?lat=5.0&lon=75.0"
   "message": "success",
   "payload": {
     "coordinate": { "lat": 5.0, "lon": 75.0 },
+    "is_land": false,
     "country": {
-      "iso_a2": "MV", "iso_a3": "MDV", "name": "Maldives",
+      "iso_a2": "MV",
+      "iso_a3": "MDV",
+      "name": "Maldives",
       "formal_name": "Republic of Maldives",
       "continent": "Seven seas (open ocean)",
-      "region": "Asia", "subregion": "Southern Asia"
+      "region": "Asia",
+      "subregion": "Southern Asia"
     },
     "nearest_place": {
       "place_id": 6692738,
       "name": "Meerufenfushi",
       "display_name": "Meerufenfushi, Kaafu Atoll, Maldives",
-      "address": { "city": "Meerufenfushi", "state": "Kaafu Atoll", "country": "Maldives", "country_code": "mv" },
+      "address": {
+        "city": "Meerufenfushi",
+        "state": "Kaafu Atoll",
+        "country": "Maldives",
+        "country_code": "mv"
+      },
       "distance_km": 154.65,
       "direction": "SW",
       "bearing_deg": 246.9
@@ -285,13 +326,141 @@ curl "localhost:8080/api/v1/analyse?lat=5.0&lon=75.0"
 }
 ```
 
-| Field | Description |
-| ----- | ----------- |
-| `country` | Country the epicentre is in, or nearest country if in ocean |
-| `nearest_place` | Closest named city/town/village with distance, compass direction, and bearing |
-| `population.search_radius_km` | How far the search expanded to find population (indicates remoteness) |
-| `population.epicentre_population` | Population at the exact epicentre cell (0 if ocean/desert) |
-| `population.total_population` | Total population within the search radius |
+| Field                             | Description                                                                   |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| `is_land`                         | Whether the coordinate is on land (`true`) or at sea (`false`)                |
+| `country`                         | Country the epicentre is in, or nearest country if in ocean                   |
+| `nearest_place`                   | Closest named city/town/village with distance, compass direction, and bearing |
+| `population.search_radius_km`     | How far the search expanded to find population (indicates remoteness)         |
+| `population.epicentre_population` | Population at the exact epicentre cell (0 if ocean/desert)                    |
+| `population.total_population`     | Total population within the search radius                                     |
+
+### `GET /api/v1/geocoding/land-check`
+
+Determine if a coordinate is on land or at sea. If on land, returns the containing country.
+
+```bash
+curl "localhost:8080/api/v1/geocoding/land-check?lat=6.9271&lon=79.8612"
+```
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "coordinate": { "lat": 6.9271, "lon": 79.8612 },
+    "is_land": true,
+    "country": {
+      "iso_a2": "LK",
+      "iso_a3": "LKA",
+      "name": "Sri Lanka",
+      "formal_name": "Democratic Socialist Republic of Sri Lanka",
+      "continent": "Asia",
+      "region": "Asia",
+      "subregion": "Southern Asia"
+    }
+  }
+}
+```
+
+| Parameter | Type  | Required | Description             |
+| --------- | ----- | -------- | ----------------------- |
+| `lat`     | float | yes      | Latitude (-90 to 90)    |
+| `lon`     | float | yes      | Longitude (-180 to 180) |
+
+### `GET /api/v1/geocoding/nearby-countries`
+
+All countries within a radius. Useful when a coordinate is near a border or the search radius crosses multiple countries. Includes `is_land` for the query point and `distance_km` for each country.
+
+```bash
+curl "localhost:8080/api/v1/geocoding/nearby-countries?lat=1.3521&lon=103.8198&radius=50"
+```
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "coordinate": { "lat": 1.3521, "lon": 103.8198 },
+    "radius_km": 50.0,
+    "is_land": true,
+    "countries": [
+      {
+        "iso_a2": "SG",
+        "iso_a3": "SGP",
+        "name": "Singapore",
+        "formal_name": "Republic of Singapore",
+        "continent": "Asia",
+        "region": "Asia",
+        "subregion": "South-Eastern Asia",
+        "distance_km": 0.0
+      },
+      {
+        "iso_a2": "MY",
+        "iso_a3": "MYS",
+        "name": "Malaysia",
+        "formal_name": "Malaysia",
+        "continent": "Asia",
+        "region": "Asia",
+        "subregion": "South-Eastern Asia",
+        "distance_km": 12.3
+      }
+    ]
+  }
+}
+```
+
+| Parameter | Type  | Required | Default | Description                   |
+| --------- | ----- | -------- | ------- | ----------------------------- |
+| `lat`     | float | yes      | —       | Latitude (-90 to 90)          |
+| `lon`     | float | yes      | —       | Longitude (-180 to 180)       |
+| `radius`  | float | no       | 1       | Search radius in km (max 500) |
+
+### `GET /api/v1/geocoding/nearby-cities`
+
+Paginated list of nearby cities/places within a radius, ordered by distance.
+
+```bash
+curl "localhost:8080/api/v1/geocoding/nearby-cities?lat=48.8566&lon=2.3522&radius=5&page=1&per_page=3"
+```
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "payload": {
+    "coordinate": { "lat": 48.8566, "lon": 2.3522 },
+    "radius_km": 5.0,
+    "total_places": 120,
+    "page": 1,
+    "per_page": 3,
+    "places": [
+      {
+        "place_id": 2988507,
+        "name": "Paris",
+        "display_name": "Paris, Paris, Île-de-France, France",
+        "address": {
+          "city": "Paris",
+          "state": "Île-de-France",
+          "country": "France",
+          "country_code": "fr"
+        },
+        "distance_km": 0.12,
+        "direction": "N",
+        "bearing_deg": 0.0
+      }
+    ]
+  }
+}
+```
+
+| Parameter  | Type  | Required | Default | Description                   |
+| ---------- | ----- | -------- | ------- | ----------------------------- |
+| `lat`      | float | yes      | —       | Latitude (-90 to 90)          |
+| `lon`      | float | yes      | —       | Longitude (-180 to 180)       |
+| `radius`   | float | no       | 1       | Search radius in km (max 500) |
+| `page`     | int   | no       | 1       | Page number (1-indexed)       |
+| `per_page` | int   | no       | 20      | Results per page (max 100)    |
 
 ### `GET /api/v1/country`
 
@@ -327,16 +496,18 @@ curl "localhost:8080/api/v1/health"
 
 ## Performance
 
-| Endpoint              | Typical Latency | Strategy                                     |
-| --------------------- | --------------- | -------------------------------------------- |
-| `/population`         | ~2ms            | B-tree lookup on `cell_id`                   |
-| `/population?radius=` | ~10ms           | `generate_series` grid scan + filter         |
-| `/reverse`            | ~5ms            | GiST index nearest-neighbor                  |
-| `/exposure` (10km)    | ~20ms           | `generate_series` grid scan + GiST geography |
-| `/exposure` (50km)    | ~100ms          | Same strategy, more cells                    |
-| `/analyse` (on land)  | ~10ms           | KNN + single grid check                      |
-| `/analyse` (ocean)    | ~50–3000ms      | Auto-expanding radius until population found |
-| `/country`            | ~10ms           | `ST_Contains` with GiST index                |
+| Endpoint                | Typical Latency | Strategy                                     |
+| ----------------------- | --------------- | -------------------------------------------- |
+| `/population`           | ~2ms            | B-tree lookup on `cell_id`                   |
+| `/population?radius=`   | ~10ms           | `generate_series` grid scan + filter         |
+| `/reverse`              | ~5ms            | GiST index nearest-neighbor                  |
+| `/exposure` (10km)      | ~20ms           | `generate_series` grid scan + GiST geography |
+| `/exposure/places`      | ~15ms           | `ST_DWithin` + paginated LIMIT/OFFSET        |
+| `/analyse` (on land)    | ~10ms           | KNN + single grid check + `ST_Contains`      |
+| `/analyse` (ocean)      | ~50–3000ms      | Auto-expanding radius until population found |
+| `/geocoding/land-check` | ~5ms            | `ST_Contains` with GiST index                |
+| `/geocoding/nearby-*`   | ~10–50ms        | `ST_DWithin` with GiST geography index       |
+| `/country`              | ~10ms           | `ST_Contains` with GiST index                |
 
 Key optimizations:
 
@@ -392,15 +563,16 @@ geopop/
 
 All configuration is via environment variables (see `.env.example`):
 
-| Variable            | Default  | Description                                        |
-| ------------------- | -------- | -------------------------------------------------- |
-| `POSTGRES_USER`     | `geopop` | Database username                                  |
-| `POSTGRES_PASSWORD` | `geopop` | Database password                                  |
-| `POSTGRES_DB`       | `geopop` | Database name                                      |
-| `DB_PORT`           | `5432`   | Host port for PostgreSQL                           |
-| `API_PORT`          | `8080`   | Host port for the API                              |
-| `POOL_SIZE`         | `16`     | Connection pool size                               |
-| `DATABASE_URL`      | —        | Full connection string (overrides individual vars) |
+| Variable            | Default   | Description                                        |
+| ------------------- | --------- | -------------------------------------------------- |
+| `POSTGRES_USER`     | `geopop`  | Database username                                  |
+| `POSTGRES_PASSWORD` | `geopop`  | Database password                                  |
+| `POSTGRES_DB`       | `geopop`  | Database name                                      |
+| `DB_PORT`           | `5432`    | Host port for PostgreSQL                           |
+| `API_HOST`          | `0.0.0.0` | Bind address for the API                           |
+| `API_PORT`          | `8080`    | Host port for the API                              |
+| `POOL_SIZE`         | `16`      | Connection pool size                               |
+| `DATABASE_URL`      | —         | Full connection string (overrides individual vars) |
 
 ## Development
 
