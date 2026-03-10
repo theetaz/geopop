@@ -71,6 +71,42 @@ fn default_radius() -> f64 {
     1.0
 }
 
+fn default_page() -> i64 {
+    1
+}
+
+fn default_per_page() -> i64 {
+    20
+}
+
+/// Paginated places query within an exposure radius.
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[schema(example = json!({"lat": 6.9271, "lon": 79.8612, "radius": 10.0, "page": 1, "per_page": 20}))]
+pub struct ExposurePlacesQuery {
+    #[validate(custom(function = "crate::validation::validate_lat"))]
+    #[schema(example = 6.9271, minimum = -90, maximum = 90)]
+    pub lat: f64,
+
+    #[validate(custom(function = "crate::validation::validate_lon"))]
+    #[schema(example = 79.8612, minimum = -180, maximum = 180)]
+    pub lon: f64,
+
+    #[serde(default = "default_radius")]
+    #[validate(custom(function = "crate::validation::validate_radius_field"))]
+    #[schema(example = 10.0, minimum = 0, maximum = 500, default = 1.0)]
+    pub radius: f64,
+
+    #[serde(default = "default_page")]
+    #[validate(custom(function = "crate::validation::validate_page"))]
+    #[schema(example = 1, minimum = 1, default = 1)]
+    pub page: i64,
+
+    #[serde(default = "default_per_page")]
+    #[validate(custom(function = "crate::validation::validate_per_page"))]
+    #[schema(example = 20, minimum = 1, maximum = 100, default = 20)]
+    pub per_page: i64,
+}
+
 /// Query filter for listing countries by continent.
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[schema(example = json!({"continent": "asia"}))]
