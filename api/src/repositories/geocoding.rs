@@ -74,11 +74,28 @@ impl GeocodingRepository {
         })
     }
 
+    pub async fn count_exposed_places(
+        client: &Object,
+        lat: f64,
+        lon: f64,
+        radius_km: f64,
+    ) -> Result<i64, AppError> {
+        let sql = r#"
+            SELECT COUNT(*)::bigint
+            FROM geonames g
+            WHERE ST_DWithin(g.geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+        "#;
+        let row = client.query_one(sql, &[&lon, &lat, &(radius_km * 1000.0)]).await?;
+        Ok(row.get(0))
+    }
+
     pub async fn get_exposed_places(
         client: &Object,
         lat: f64,
         lon: f64,
         radius_km: f64,
+        limit: i64,
+        offset: i64,
     ) -> Result<Vec<ExposedPlace>, AppError> {
         let sql = r#"
             SELECT g.geonameid, g.name, g.latitude, g.longitude,
@@ -91,10 +108,11 @@ impl GeocodingRepository {
             LEFT JOIN countries c ON c.iso_a2 = g.country_code
             WHERE ST_DWithin(g.geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
             ORDER BY ST_Distance(g.geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography)
+            LIMIT $4 OFFSET $5
         "#;
 
         let rows = client
-            .query(sql, &[&lon, &lat, &(radius_km * 1000.0)])
+            .query(sql, &[&lon, &lat, &(radius_km * 1000.0), &limit, &offset])
             .await?;
 
         Ok(rows
