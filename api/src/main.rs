@@ -36,6 +36,9 @@ use crate::config::API_PREFIX;
         routes::population::get_population,
         routes::population::batch_population,
         routes::geocoding::reverse_geocode,
+        routes::geocoding::nearby_countries,
+        routes::geocoding::nearby_cities,
+        routes::geocoding::land_check,
         routes::exposure::exposure,
         routes::exposure::exposure_places,
         routes::analyse::analyse,
@@ -53,6 +56,8 @@ use crate::config::API_PREFIX;
         models::ExposurePlacesQuery, models::ExposurePlacesPayload,
         models::ExposedPlace, models::CoordinateInfo,
         models::AnalysePayload, models::NearestPlace, models::PopulationSummary,
+        models::NearbyCountryEntry, models::NearbyCountriesPayload,
+        models::LandCheckPayload, models::NearbyCitiesPayload,
         models::CountryPayload, models::CountryDetailPayload,
         models::ContinentQuery, models::CountryListPayload,
     )),
@@ -150,6 +155,9 @@ async fn main() -> std::io::Result<()> {
                     .route("/population", web::get().to(routes::population::get_population))
                     .route("/population/batch", web::post().to(routes::population::batch_population))
                     .route("/reverse", web::get().to(routes::geocoding::reverse_geocode))
+                    .route("/geocoding/nearby-countries", web::get().to(routes::geocoding::nearby_countries))
+                    .route("/geocoding/nearby-cities", web::get().to(routes::geocoding::nearby_cities))
+                    .route("/geocoding/land-check", web::get().to(routes::geocoding::land_check))
                     .route("/exposure/places", web::get().to(routes::exposure::exposure_places))
                     .route("/exposure", web::get().to(routes::exposure::exposure))
                     .route("/analyse", web::get().to(routes::analyse::analyse))
