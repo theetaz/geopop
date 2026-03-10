@@ -187,7 +187,29 @@ pub struct ExposurePayload {
     /// Population density of the centre grid cell (people/km²)
     #[schema(example = 37057.1)]
     pub cell_density_per_km2: f64,
-    /// Named places found within the search radius
+    /// Number of named places within the search radius (use /exposure/places for details)
+    #[schema(example = 121)]
+    pub place_count: i64,
+}
+
+/// Paginated list of named places within an exposure radius.
+#[derive(Serialize, ToSchema)]
+pub struct ExposurePlacesPayload {
+    /// Centre coordinate of the search
+    pub coordinate: CoordinateInfo,
+    /// Search radius in kilometres
+    #[schema(example = 10.0)]
+    pub radius_km: f64,
+    /// Total number of places within the radius
+    #[schema(example = 121)]
+    pub total_places: i64,
+    /// Current page number (1-indexed)
+    #[schema(example = 1)]
+    pub page: i64,
+    /// Number of results per page
+    #[schema(example = 20)]
+    pub per_page: i64,
+    /// Places on this page, ordered by distance from centre
     pub places: Vec<ExposedPlace>,
 }
 
