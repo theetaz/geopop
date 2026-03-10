@@ -1,10 +1,64 @@
 use crate::errors::AppError;
-use crate::models::{CountryDetailPayload, CountryPayload};
+use crate::models::{CountryDetailPayload, CountryPayload, NearbyCountryEntry};
 use deadpool_postgres::Object;
 
 pub(crate) struct CountryRepository;
 
 impl CountryRepository {
+    pub async fn is_land(client: &Object, lat: f64, lon: f64) -> Result<bool, AppError> {
+        let sql = r#"
+            SELECT EXISTS(
+                SELECT 1 FROM countries
+                WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326))
+            )
+        "#;
+        let row = client.query_one(sql, &[&lon, &lat]).await?;
+        Ok(row.get(0))
+    }
+
+    pub async fn get_land_country(
+        client: &Object,
+        lat: f64,
+        lon: f64,
+    ) -> Result<Option<CountryPayload>, AppError> {
+        let sql = r#"
+            SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion
+            FROM countries
+            WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326))
+            LIMIT 1
+        "#;
+        Ok(client
+            .query_opt(sql, &[&lon, &lat])
+            .await?
+            .map(|r| Self::build_country_payload(&r)))
+    }
+
+    pub async fn get_nearby_countries(
+        client: &Object,
+        lat: f64,
+        lon: f64,
+        radius_km: f64,
+    ) -> Result<Vec<NearbyCountryEntry>, AppError> {
+        let sql = r#"
+            SELECT iso_a2, iso_a3, name, formal_name, continent, region_un, subregion,
+                   ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0
+            FROM countries
+            WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+            ORDER BY ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography)
+        "#;
+        let rows = client.query(sql, &[&lon, &lat, &(radius_km * 1000.0)]).await?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let distance_km: f64 = r.get(7);
+                NearbyCountryEntry {
+                    country: Self::build_country_payload(r),
+                    distance_km: (distance_km * 100.0).round() / 100.0,
+                }
+            })
+            .collect())
+    }
+
     pub async fn get_by_coordinate(
         client: &Object,
         lat: f64,
