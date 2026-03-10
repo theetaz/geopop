@@ -37,6 +37,20 @@ pub fn validate_radius_field(radius: f64) -> Result<(), ValidationError> {
     Ok(())
 }
 
+pub fn validate_page(page: i64) -> Result<(), ValidationError> {
+    if page < 1 {
+        return Err(ValidationError::new("page"));
+    }
+    Ok(())
+}
+
+pub fn validate_per_page(per_page: i64) -> Result<(), ValidationError> {
+    if per_page < 1 || per_page > 100 {
+        return Err(ValidationError::new("per_page"));
+    }
+    Ok(())
+}
+
 pub fn validate_continent_field(continent: &str) -> Result<(), ValidationError> {
     let normalized = continent.trim().to_lowercase();
     if normalized.is_empty() || !VALID_CONTINENTS.contains(&normalized.as_str()) {
