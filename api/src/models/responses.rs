@@ -282,6 +282,55 @@ pub struct CountryDetailPayload {
     pub bbox: [f64; 4],
 }
 
+/// A country entry with distance from a search coordinate.
+#[derive(Serialize, ToSchema)]
+pub struct NearbyCountryEntry {
+    #[serde(flatten)]
+    pub country: CountryPayload,
+    /// Distance from the search coordinate to the nearest country border in km (0 if inside)
+    #[schema(example = 0.0)]
+    pub distance_km: f64,
+}
+
+/// Countries found within a radius of a coordinate.
+#[derive(Serialize, ToSchema)]
+pub struct NearbyCountriesPayload {
+    pub coordinate: CoordinateInfo,
+    #[schema(example = 50.0)]
+    pub radius_km: f64,
+    /// Whether the coordinate itself is on land (inside a country polygon)
+    #[schema(example = true)]
+    pub is_land: bool,
+    pub countries: Vec<NearbyCountryEntry>,
+}
+
+/// Land/sea check result for a coordinate.
+#[derive(Serialize, ToSchema)]
+pub struct LandCheckPayload {
+    pub coordinate: CoordinateInfo,
+    /// true if the coordinate is on land, false if at sea
+    #[schema(example = true)]
+    pub is_land: bool,
+    /// The country containing the coordinate (null if at sea)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<CountryPayload>,
+}
+
+/// Paginated list of nearby cities/places within a radius.
+#[derive(Serialize, ToSchema)]
+pub struct NearbyCitiesPayload {
+    pub coordinate: CoordinateInfo,
+    #[schema(example = 10.0)]
+    pub radius_km: f64,
+    #[schema(example = 158)]
+    pub total_places: i64,
+    #[schema(example = 1)]
+    pub page: i64,
+    #[schema(example = 20)]
+    pub per_page: i64,
+    pub places: Vec<ExposedPlace>,
+}
+
 /// List of countries belonging to a continent.
 #[derive(Serialize, ToSchema)]
 pub struct CountryListPayload {
