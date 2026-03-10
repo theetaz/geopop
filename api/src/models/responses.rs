@@ -401,6 +401,9 @@ pub struct PopulationSummary {
 pub struct AnalysePayload {
     /// Epicentre coordinate
     pub coordinate: CoordinateInfo,
+    /// Whether the coordinate is on land (true) or at sea (false)
+    #[schema(example = true)]
+    pub is_land: bool,
     /// Country the epicentre is in (or nearest to, if in ocean)
     pub country: CountryPayload,
     /// Nearest named place from GeoNames with distance and direction
