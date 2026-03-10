@@ -57,8 +57,7 @@ pub(crate) async fn analyse(
 
     let (lat, lon) = (query.lat, query.lon);
 
-    // Run country, geocoding, and epicentre lookups concurrently on separate connections
-    let (country_res, place_res, epicentre_res) = tokio::join!(
+    let (country_res, place_res, epicentre_res, land_res) = tokio::join!(
         async {
             let c = pool.get().await.map_err(AppError::from)?;
             configure_conn(&c).await;
@@ -74,10 +73,15 @@ pub(crate) async fn analyse(
             configure_conn(&c).await;
             PopulationRepository::get_cell_population(&c, lat, lon).await
         },
+        async {
+            let c = pool.get().await.map_err(AppError::from)?;
+            CountryRepository::is_land(&c, lat, lon).await
+        },
     );
 
     let country = country_res?;
     let nearest_place = place_res?;
+    let is_land = land_res.unwrap_or(false);
     let epicentre_pop = epicentre_res.unwrap_or(0.0);
 
     // Population radius search on its own connection
@@ -96,6 +100,7 @@ pub(crate) async fn analyse(
 
     Ok(ApiResponse::ok(AnalysePayload {
         coordinate: CoordinateInfo { lat, lon },
+        is_land,
         country,
         nearest_place,
         population: PopulationSummary {
