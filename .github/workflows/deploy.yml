@@ -76,8 +76,8 @@ jobs:
             --parameters commands='[
               "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 971422717437.dkr.ecr.us-east-1.amazonaws.com",
               "cd /opt/terraguard/server-b",
-              "docker compose pull tg-geo-pop",
-              "docker compose up -d --no-deps tg-geo-pop"
+              "docker-compose pull tg-geo-pop",
+              "docker-compose up -d --no-deps tg-geo-pop"
             ]' \
             --query 'Command.CommandId' --output text)
 
