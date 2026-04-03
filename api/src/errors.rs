@@ -23,19 +23,22 @@ impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse {
         match self {
             Self::Validation(msg) => HttpResponse::BadRequest().json(ErrorBody {
-                code: 400,
+                success: false,
                 message: msg,
+                payload: None::<()>,
             }),
             Self::Database(msg) => {
                 log::error!("Database error: {msg}");
                 HttpResponse::InternalServerError().json(ErrorBody {
-                    code: 500,
+                    success: false,
                     message: "database connection error",
+                    payload: None::<()>,
                 })
             }
             Self::NotFound(msg) => HttpResponse::NotFound().json(ErrorBody {
-                code: 404,
+                success: false,
                 message: msg,
+                payload: None::<()>,
             }),
         }
     }
@@ -64,7 +67,8 @@ impl From<deadpool_postgres::PoolError> for AppError {
 }
 
 #[derive(Serialize)]
-struct ErrorBody<'a> {
-    code: u16,
+struct ErrorBody<'a, T: Serialize> {
+    success: bool,
     message: &'a str,
+    payload: Option<T>,
 }
