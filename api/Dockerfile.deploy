@@ -1,0 +1,4 @@
+FROM gcr.io/distroless/cc-debian12:nonroot
+COPY target/geopop-api-arm64 /usr/local/bin/geopop-api
+EXPOSE 8080
+CMD ["geopop-api"]

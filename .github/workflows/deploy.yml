@@ -6,6 +6,7 @@ on:
 
 env:
   ECR_REPO: terra-guard/tg-geo-pop
+  CARGO_TARGET: aarch64-unknown-linux-gnu
 
 jobs:
   test:
@@ -24,7 +25,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             api/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('api/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('api/Cargo.lock') }}
 
       - name: Run tests
         working-directory: api
@@ -36,6 +37,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain + ARM64 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.CARGO_TARGET }}
+
+      - name: Install cross-compilation toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Cache cargo (cross-compile)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            api/target
+          key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('api/Cargo.lock') }}
+
+      - name: Cross-compile for ARM64
+        working-directory: api
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release --target ${{ env.CARGO_TARGET }}
+          cp target/${{ env.CARGO_TARGET }}/release/geopop-api target/geopop-api-arm64
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -51,22 +80,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Set up QEMU for ARM64
-        uses: docker/setup-qemu-action@v3
-
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: ./api
-          file: ./api/Dockerfile
+          file: ./api/Dockerfile.deploy
           push: true
           provenance: false
           platforms: linux/arm64
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:latest
-          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
 
       - name: Deploy to EC2 via SSM
         run: |
@@ -107,8 +131,3 @@ jobs:
 
           echo "Deployment timed out"
           exit 1
-
-      - name: Post-build cleanup
-        if: always()
-        run: |
-          docker buildx prune -af || true
