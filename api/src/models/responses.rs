@@ -415,10 +415,14 @@ pub struct AnalysePayload {
 /// Root endpoint payload: health, docs link, and database stats.
 #[derive(Serialize, ToSchema)]
 pub struct RootPayload {
+    #[schema(example = "tg-geo-pop")]
+    pub service: String,
     #[schema(example = "ok")]
     pub status: String,
     #[schema(example = "/api/v1/docs/")]
     pub docs_url: String,
+    #[schema(example = "/api/v1/health")]
+    pub health_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tables: Option<Vec<TableRowCount>>,
 }

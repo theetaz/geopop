@@ -41,8 +41,10 @@ pub(crate) async fn root(pool: web::Data<Pool>) -> ActixResult<HttpResponse> {
     };
 
     Ok(ApiResponse::ok(RootPayload {
+        service: "tg-geo-pop".into(),
         status: "ok".into(),
         docs_url: format!("{API_PREFIX}/docs/"),
+        health_url: format!("{API_PREFIX}/health"),
         tables,
     }))
 }
