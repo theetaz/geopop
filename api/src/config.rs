@@ -7,6 +7,12 @@ pub(crate) struct Config {
     pub host: String,
     pub port: u16,
     pub pool_size: usize,
+    /// Shared-secret expected in the `X-API-Key` header on protected routes.
+    ///
+    /// Empty string disables the auth middleware entirely (local dev default).
+    /// Production deployments must set this to match the value configured on
+    /// every consumer (tg-backend-api, tg-event-processor, etc.).
+    pub api_key: String,
 }
 
 impl Config {
@@ -24,6 +30,7 @@ impl Config {
                 .and_then(|s| s.parse().ok())
                 .filter(|&s| s > 0)
                 .unwrap_or(32),
+            api_key: env::var("API_KEY").unwrap_or_default(),
         }
     }
 }

@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod errors;
 mod grid;
@@ -9,6 +10,8 @@ mod validation;
 
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
+
+use crate::auth::ApiKeyAuth;
 use deadpool_postgres::{Config as PgConfig, ManagerConfig, PoolConfig, RecyclingMethod, Runtime, Timeouts};
 use env_logger::Env;
 use native_tls::{Certificate, TlsConnector};
@@ -132,12 +135,25 @@ async fn main() -> std::io::Result<()> {
     let bind = format!("{}:{}", cfg.host, cfg.port);
     log::info!("Starting GeoPop API on {bind}");
     log::info!("Swagger UI: http://{bind}{API_PREFIX}/docs/");
+    if cfg.api_key.is_empty() {
+        log::warn!(
+            "API_KEY is not set — all routes are open. \
+             Set API_KEY in the environment to require X-API-Key on protected endpoints."
+        );
+    } else {
+        log::info!(
+            "API key auth enabled. Public paths: /, {API_PREFIX}/health, \
+             {API_PREFIX}/docs/*, {API_PREFIX}/openapi.json"
+        );
+    }
 
     let mut openapi = ApiDoc::openapi();
     openapi.servers = Some(vec![Server::new("/"), Server::new(API_PREFIX)]);
 
     let openapi_url: &'static str = Box::leak(format!("{API_PREFIX}/openapi.json").into_boxed_str());
     let docs_path: &'static str = Box::leak(format!("{API_PREFIX}/docs/{{_:.*}}").into_boxed_str());
+
+    let api_key = cfg.api_key.clone();
 
     HttpServer::new(move || {
         App::new()
@@ -146,6 +162,10 @@ async fn main() -> std::io::Result<()> {
                     .exclude("/api/v1/health"),
             )
             .wrap(Cors::permissive())
+            // API key auth: runs AFTER logger/CORS so rejected requests are still
+            // logged and CORS preflight keeps working for browsers. The middleware
+            // has a built-in allowlist for root, health, docs, and openapi.json.
+            .wrap(ApiKeyAuth::new(api_key.clone()))
             .app_data(web::Data::new(pool.clone()))
             .route("/", web::get().to(routes::root::root))
             .service(SwaggerUi::new(docs_path).url(openapi_url, openapi.clone()))
