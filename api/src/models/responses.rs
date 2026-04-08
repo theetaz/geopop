@@ -412,6 +412,82 @@ pub struct AnalysePayload {
     pub population: PopulationSummary,
 }
 
+/// A single city search hit returned by /cities/search.
+#[derive(Serialize, ToSchema)]
+#[schema(example = json!({
+    "place_id": 1248991,
+    "name": "Colombo",
+    "display_name": "Colombo, Western Province, Sri Lanka",
+    "country_code": "LK",
+    "country": "Sri Lanka",
+    "admin1": "Western Province",
+    "admin2": "Colombo District",
+    "feature_code": "PPLC",
+    "lat": 6.9319,
+    "lon": 79.8478,
+    "population": 648034,
+    "score": 1.0,
+    "bbox": [79.8028, 6.8819, 79.8928, 6.9819]
+}))]
+pub struct CityHit {
+    /// GeoNames place identifier
+    #[schema(example = 1248991)]
+    pub place_id: i32,
+    /// Matched place name
+    #[schema(example = "Colombo")]
+    pub name: String,
+    /// Full display name including administrative hierarchy
+    #[schema(example = "Colombo, Western Province, Sri Lanka")]
+    pub display_name: String,
+    /// ISO 3166-1 alpha-2 country code
+    #[schema(example = "LK")]
+    pub country_code: Option<String>,
+    /// Country common name
+    #[schema(example = "Sri Lanka")]
+    pub country: Option<String>,
+    /// First-order administrative division (state / province / region)
+    #[schema(example = "Western Province")]
+    pub admin1: Option<String>,
+    /// Second-order administrative division (district / county)
+    #[schema(example = "Colombo District")]
+    pub admin2: Option<String>,
+    /// GeoNames feature code (PPLC = capital, PPLA = admin capital, PPL = populated place, ...)
+    #[schema(example = "PPLC")]
+    pub feature_code: Option<String>,
+    /// Latitude of the place centroid
+    #[schema(example = 6.9319)]
+    pub lat: f64,
+    /// Longitude of the place centroid
+    #[schema(example = 79.8478)]
+    pub lon: f64,
+    /// Population estimate from GeoNames (0 if unknown)
+    #[schema(example = 648034)]
+    pub population: i64,
+    /// Match quality score in [0, 1]. 1.0 = exact, 0.9 = prefix, <0.9 = fuzzy similarity.
+    #[schema(example = 1.0)]
+    pub score: f64,
+    /// Synthesized bounding box [min_lon, min_lat, max_lon, max_lat] scaled from population.
+    /// Use this as a fallback when no true boundary polygon is available.
+    #[schema(example = json!([79.8028, 6.8819, 79.8928, 6.9819]))]
+    pub bbox: [f64; 4],
+}
+
+/// City search result set.
+#[derive(Serialize, ToSchema)]
+pub struct CitySearchPayload {
+    /// Echoed search term
+    #[schema(example = "colom")]
+    pub query: String,
+    /// Echoed country filter (uppercase, if provided)
+    #[schema(example = "LK")]
+    pub country: Option<String>,
+    /// Number of results returned
+    #[schema(example = 3)]
+    pub count: usize,
+    /// Matching cities, ordered by score then population
+    pub results: Vec<CityHit>,
+}
+
 /// Root endpoint payload: health, docs link, and database stats.
 #[derive(Serialize, ToSchema)]
 pub struct RootPayload {

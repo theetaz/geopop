@@ -4,8 +4,8 @@ use validator::Validate;
 
 use crate::errors::AppError;
 use crate::models::{
-    CoordinateInfo, ExposurePlacesQuery, ExposureQuery, LandCheckPayload,
-    NearbyCountriesPayload, NearbyCitiesPayload, PointQuery, ReversePayload,
+    CitySearchPayload, CitySearchQuery, CoordinateInfo, ExposurePlacesQuery, ExposureQuery,
+    LandCheckPayload, NearbyCitiesPayload, NearbyCountriesPayload, PointQuery, ReversePayload,
 };
 use crate::repositories::{CountryRepository, GeocodingRepository};
 use crate::response::ApiResponse;
@@ -169,5 +169,71 @@ pub(crate) async fn land_check(
         coordinate: CoordinateInfo { lat, lon },
         is_land,
         country,
+    }))
+}
+
+/// Fuzzy city search (Google Places–style autocomplete).
+#[utoipa::path(
+    get,
+    path = "/cities/search",
+    tag = "Geocoding",
+    summary = "Fuzzy city search",
+    description = "Returns populated places matching a partial name, ranked by match quality \
+        then population. Powered by a pg_trgm GIN index on GeoNames, so typos (\"lonon\") and \
+        prefixes (\"lon\") both work.\n\n\
+        Pass `country` (ISO 3166-1 alpha-2) to scope the search to a single country. Pass \
+        `min_population` to filter out hamlets when building UI suggestions.\n\n\
+        Each hit includes a synthesised `bbox` (scaled from population) so a map can frame the \
+        city. True polygon boundaries are not yet included — that will arrive in a follow-up \
+        once OSM admin boundaries are ingested.",
+    params(
+        ("q" = String, Query,
+            description = "Search term — partial city name (min 2 chars, max 80).",
+            example = "colom", min_length = 2, max_length = 80),
+        ("country" = Option<String>, Query,
+            description = "Optional ISO 3166-1 alpha-2 country code to scope the search.",
+            example = "LK", min_length = 2, max_length = 2),
+        ("limit" = Option<i64>, Query,
+            description = "Max results to return (default: 10, max: 50).",
+            example = 10, minimum = 1, maximum = 50),
+        ("min_population" = Option<i64>, Query,
+            description = "Only return places whose GeoNames population estimate is at least this value. \
+                Default: 0. Useful to hide hamlets — try 1000 or 10000 for a cleaner autocomplete.",
+            example = 1000, minimum = 0)
+    ),
+    responses(
+        (status = 200, description = "Matching cities ordered by score then population",
+            body = CitySearchPayload),
+        (status = 400, description = "Invalid query parameters")
+    )
+)]
+pub(crate) async fn search_cities(
+    pool: web::Data<Pool>,
+    query: web::Query<CitySearchQuery>,
+) -> ActixResult<HttpResponse> {
+    query.validate().map_err(|e| {
+        AppError::Validation(format!("Validation failed: {e}"))
+    })?;
+
+    let client = pool.get().await.map_err(AppError::from)?;
+
+    let q = query.q.trim().to_string();
+    let country_upper = query.country.as_ref().map(|c| c.to_uppercase());
+    let country_ref = country_upper.as_deref();
+
+    let results = GeocodingRepository::search_cities(
+        &client,
+        &q,
+        country_ref,
+        query.limit,
+        query.min_population,
+    )
+    .await?;
+
+    Ok(ApiResponse::ok(CitySearchPayload {
+        query: q,
+        country: country_upper,
+        count: results.len(),
+        results,
     }))
 }

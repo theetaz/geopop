@@ -42,6 +42,7 @@ use crate::config::API_PREFIX;
         routes::geocoding::nearby_countries,
         routes::geocoding::nearby_cities,
         routes::geocoding::land_check,
+        routes::geocoding::search_cities,
         routes::exposure::exposure,
         routes::exposure::exposure_places,
         routes::analyse::analyse,
@@ -63,6 +64,7 @@ use crate::config::API_PREFIX;
         models::LandCheckPayload, models::NearbyCitiesPayload,
         models::CountryPayload, models::CountryDetailPayload,
         models::ContinentQuery, models::CountryListPayload,
+        models::CitySearchQuery, models::CitySearchPayload, models::CityHit,
     )),
     tags(
         (name = "System", description = "Health and status"),
@@ -178,6 +180,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/geocoding/nearby-countries", web::get().to(routes::geocoding::nearby_countries))
                     .route("/geocoding/nearby-cities", web::get().to(routes::geocoding::nearby_cities))
                     .route("/geocoding/land-check", web::get().to(routes::geocoding::land_check))
+                    .route("/cities/search", web::get().to(routes::geocoding::search_cities))
                     .route("/exposure/places", web::get().to(routes::exposure::exposure_places))
                     .route("/exposure", web::get().to(routes::exposure::exposure))
                     .route("/analyse", web::get().to(routes::analyse::analyse))

@@ -1,5 +1,9 @@
 -- GeoPop schema: WorldPop population grid + GeoNames places + Natural Earth countries
 CREATE EXTENSION IF NOT EXISTS postgis;
+-- pg_trgm powers fuzzy / prefix / substring matching on place names for /cities/search
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- unaccent lets us match "Sao Paulo" against "São Paulo" transparently
+CREATE EXTENSION IF NOT EXISTS unaccent;
 
 -- ── WorldPop 1km population grid ──
 -- Each cell is a 30 arc-second (~1km) grid cell identified by a canonical cell_id.
@@ -75,3 +79,24 @@ CREATE TABLE geonames (
 
 CREATE INDEX idx_geonames_geom ON geonames USING GiST (geom);
 CREATE INDEX idx_geonames_geog ON geonames USING GiST ((geom::geography));
+
+-- ── City search indexes ──
+-- Trigram GIN index powers fuzzy search (% operator, similarity(), ILIKE '%foo%').
+CREATE INDEX idx_geonames_name_trgm
+    ON geonames USING GIN (name gin_trgm_ops);
+
+-- Prefix index for the fast-path "starts-with" branch of autocomplete.
+CREATE INDEX idx_geonames_name_lower
+    ON geonames (LOWER(name) text_pattern_ops);
+
+-- Country scoping for /cities/search?country=XX
+CREATE INDEX idx_geonames_country_code
+    ON geonames (country_code);
+
+-- Lets "rank by population within a country" sort use the index.
+CREATE INDEX idx_geonames_country_pop
+    ON geonames (country_code, population DESC);
+
+-- Feature code filter speeds up the "cities only" subset (PPL*, excluding hamlets/farms).
+CREATE INDEX idx_geonames_feature_code
+    ON geonames (feature_code);

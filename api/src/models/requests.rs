@@ -107,6 +107,43 @@ pub struct ExposurePlacesQuery {
     pub per_page: i64,
 }
 
+fn default_city_limit() -> i64 {
+    10
+}
+
+fn default_min_population() -> i64 {
+    0
+}
+
+/// Fuzzy city search query, used by /cities/search.
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[schema(example = json!({"q": "colom", "country": "LK", "limit": 10}))]
+pub struct CitySearchQuery {
+    /// Search term (partial name, typos tolerated). Minimum 2 characters.
+    #[validate(custom(function = "crate::validation::validate_city_query"))]
+    #[schema(example = "colom", min_length = 2, max_length = 80)]
+    pub q: String,
+
+    /// Optional ISO 3166-1 alpha-2 country code to scope the search (e.g. `LK`, `us`).
+    #[serde(default)]
+    #[validate(custom(function = "crate::validation::validate_optional_iso2"))]
+    #[schema(example = "LK", min_length = 2, max_length = 2)]
+    pub country: Option<String>,
+
+    /// Maximum number of results to return (default: 10, max: 50).
+    #[serde(default = "default_city_limit")]
+    #[validate(custom(function = "crate::validation::validate_city_limit"))]
+    #[schema(example = 10, minimum = 1, maximum = 50, default = 10)]
+    pub limit: i64,
+
+    /// Only return places with population greater than or equal to this value.
+    /// Use this to filter out hamlets / farms. Default: 0 (no filter).
+    #[serde(default = "default_min_population")]
+    #[validate(custom(function = "crate::validation::validate_min_population"))]
+    #[schema(example = 1000, minimum = 0, default = 0)]
+    pub min_population: i64,
+}
+
 /// Query filter for listing countries by continent.
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[schema(example = json!({"continent": "asia"}))]

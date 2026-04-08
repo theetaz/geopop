@@ -51,6 +51,35 @@ pub fn validate_per_page(per_page: i64) -> Result<(), ValidationError> {
     Ok(())
 }
 
+pub fn validate_city_query(q: &str) -> Result<(), ValidationError> {
+    let trimmed = q.trim();
+    if trimmed.len() < 2 || trimmed.len() > 80 {
+        return Err(ValidationError::new("q"));
+    }
+    Ok(())
+}
+
+pub fn validate_optional_iso2(code: &str) -> Result<(), ValidationError> {
+    if code.len() != 2 || !code.chars().all(|c| c.is_ascii_alphabetic()) {
+        return Err(ValidationError::new("country"));
+    }
+    Ok(())
+}
+
+pub fn validate_city_limit(limit: i64) -> Result<(), ValidationError> {
+    if limit < 1 || limit > 50 {
+        return Err(ValidationError::new("limit"));
+    }
+    Ok(())
+}
+
+pub fn validate_min_population(value: i64) -> Result<(), ValidationError> {
+    if value < 0 {
+        return Err(ValidationError::new("min_population"));
+    }
+    Ok(())
+}
+
 pub fn validate_continent_field(continent: &str) -> Result<(), ValidationError> {
     let normalized = continent.trim().to_lowercase();
     if normalized.is_empty() || !VALID_CONTINENTS.contains(&normalized.as_str()) {
