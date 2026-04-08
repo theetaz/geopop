@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     container_name: geopop-api
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-geopop}:${POSTGRES_PASSWORD:-geopop}@db:5432/${POSTGRES_DB:-geopop}
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-geopop}:${POSTGRES_PASSWORD:-geopop}@db:5432/${POSTGRES_DB:-geopop}}
       API_HOST: 0.0.0.0
       API_PORT: "8080"
       POOL_SIZE: ${POOL_SIZE:-32}
