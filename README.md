@@ -12,6 +12,7 @@ Query any coordinate on Earth and get back population estimates, reverse geocodi
 - **Population grid** — retrieve all grid cells within a radius with bounds for map rendering
 - **Batch queries** — up to 1,000 coordinate lookups in a single request
 - **Reverse geocoding** — nearest populated place from 4.8M+ GeoNames entries
+- **Fuzzy city search** — Google-Places-style autocomplete across 5M+ places with typo tolerance, country scoping, and population-based ranking
 - **Exposure analysis** — population within a radius, with paginated place listings
 - **Disaster impact analysis** — auto-expanding radius search with land/sea detection
 - **Nearby countries & cities** — radius-based search with cross-border detection and pagination
@@ -462,6 +463,70 @@ curl "localhost:8080/api/v1/geocoding/nearby-cities?lat=48.8566&lon=2.3522&radiu
 | `page`     | int   | no       | 1       | Page number (1-indexed)       |
 | `per_page` | int   | no       | 20      | Results per page (max 100)    |
 
+### `GET /api/v1/cities/search`
+
+Fuzzy city search for Google-Places-style autocomplete. Powered by a `pg_trgm` GIN index on 5M+ GeoNames populated places. Supports prefix matching (`lon` → London), typo tolerance (`lonon` → London), country scoping, and a population filter to hide hamlets.
+
+Results are ranked by `match_quality + population_boost`, so major cities beat same-named villages — typing `londo` returns **London, UK** first, not one of the 40+ population-0 villages literally named "Londo".
+
+**Global search:**
+
+```bash
+curl "localhost:8080/api/v1/cities/search?q=londo&limit=3"
+```
+
+```json
+{
+  "success": true,
+  "message": "success",
+  "payload": {
+    "query": "londo",
+    "country": null,
+    "count": 3,
+    "results": [
+      {
+        "place_id": 2643743,
+        "name": "London",
+        "display_name": "London, England, United Kingdom",
+        "country_code": "GB",
+        "country": "United Kingdom",
+        "admin1": "England",
+        "admin2": "Greater London",
+        "feature_code": "PPLC",
+        "lat": 51.50853,
+        "lon": -0.12574,
+        "population": 8961989,
+        "score": 1.653,
+        "bbox": [-0.342, 51.374, 0.091, 51.643]
+      }
+    ]
+  }
+}
+```
+
+**Country-scoped:**
+
+```bash
+curl "localhost:8080/api/v1/cities/search?q=colom&country=LK&limit=5"
+```
+
+**Filter out hamlets:**
+
+```bash
+curl "localhost:8080/api/v1/cities/search?q=par&min_population=100000&limit=5"
+```
+
+| Parameter        | Type   | Required | Default | Description                                                                                                                                                                           |
+| ---------------- | ------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `q`              | string | yes      | —       | Partial city name (2–80 chars). Prefix matching for queries <4 chars, fuzzy matching (typo tolerant) for longer queries.                                                              |
+| `country`        | string | no       | —       | ISO 3166-1 alpha-2 code to scope search (e.g. `LK`, `us`). Case-insensitive.                                                                                                          |
+| `limit`          | int    | no       | 10      | Max results (1–50).                                                                                                                                                                   |
+| `min_population` | int    | no       | 0       | Only return places whose GeoNames population estimate is ≥ this value. Try `1000` or `100000` for a cleaner autocomplete.                                                             |
+
+Each hit includes a synthesized `bbox` (`[min_lon, min_lat, max_lon, max_lat]`) scaled from population, so a map can frame the city on selection. True polygon boundaries from OSM admin areas are a planned follow-up — the bbox is a reasonable placeholder until then.
+
+**Feature codes returned** (GeoNames `P.*` subset): `PPLC` (capital), `PPLA`/`PPLA2`/`PPLA3`/`PPLA4` (admin capitals), `PPLG` (seat of government), `PPL` (populated place). Sections, localities, farms and historical places are excluded from results.
+
 ### `GET /api/v1/country`
 
 Country containing a coordinate.
@@ -507,6 +572,7 @@ curl "localhost:8080/api/v1/health"
 | `/analyse` (ocean)      | ~50–3000ms      | Auto-expanding radius until population found |
 | `/geocoding/land-check` | ~5ms            | `ST_Contains` with GiST index                |
 | `/geocoding/nearby-*`   | ~10–50ms        | `ST_DWithin` with GiST geography index       |
+| `/cities/search`        | ~30–80ms        | `pg_trgm` GIN + prefix index on `geonames.name` |
 | `/country`              | ~10ms           | `ST_Contains` with GiST index                |
 
 Key optimizations:
@@ -544,7 +610,8 @@ geopop/
 │   └── Dockerfile
 ├── docker/                 # Database container
 │   ├── Dockerfile.db
-│   ├── init.sql            # Schema, indexes, functions
+│   ├── init.sql            # Base schema, run once on empty DB
+│   ├── migrate.sql         # Idempotent extensions/indexes migration
 │   └── postgresql.conf     # Tuned for population workload
 ├── ingestion/              # Data download & ingestion scripts
 │   ├── download_worldpop.sh
@@ -572,7 +639,43 @@ All configuration is via environment variables (see `.env.example`):
 | `API_HOST`          | `0.0.0.0` | Bind address for the API                           |
 | `API_PORT`          | `8080`    | Host port for the API                              |
 | `POOL_SIZE`         | `16`      | Connection pool size                               |
-| `DATABASE_URL`      | —         | Full connection string (overrides individual vars) |
+| `DATABASE_URL`      | —         | Full connection string used by the API container. When the DB is on the host, use `host.docker.internal` so the container can reach it. |
+| `HOST_DATABASE_URL` | —         | Optional override used by host-side tools (`make migrate`, Python ingestion). Set this when `DATABASE_URL` uses `host.docker.internal` — e.g. `postgres://user:pass@localhost:5432/db`. Falls back to `DATABASE_URL` when unset. |
+
+## Deployment
+
+The repository ships two SQL files that together make deploys reproducible on a fresh VPS or a managed Postgres:
+
+- **`docker/init.sql`** — base schema (tables, functions). Run once on an empty database. Automatically executed by the bundled `db` container on first boot.
+- **`docker/migrate.sql`** — idempotent migration that ensures every extension (`postgis`, `pg_trgm`, `unaccent`) and every index is present. Safe to run repeatedly; uses `CREATE EXTENSION IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` throughout.
+
+### First-time VPS bootstrap
+
+```bash
+# 1. Configure DB credentials (set both DATABASE_URL and HOST_DATABASE_URL if the
+#    DB lives on the host and the API runs in Docker)
+cp .env.example .env && $EDITOR .env
+
+# 2. One command: init schema → download datasets → ingest → migrate (indexes)
+make bootstrap
+
+# 3. Start the API container
+docker compose up -d --build --no-deps api
+```
+
+### Redeploy against an existing database
+
+```bash
+# Applies any new extensions/indexes, then rebuilds & restarts the API container.
+make deploy
+```
+
+### Schema-only migration
+
+```bash
+# Safe to run at any time; it will skip anything that already exists.
+make migrate
+```
 
 ## Development
 
